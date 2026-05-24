@@ -1,0 +1,76 @@
+# =========================
+# Root .gitignore
+# =========================
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency folders
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build / output
+dist/
+build/
+coverage/
+
+# Vite
+frontend/dist/
+.vite/
+
+# Runtime data
+backend/data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Package manager lock files (optional)
+# Uncomment if you don't want to track them
+
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Generated files
+*.pdf
+*.docx
+*.pptx
+*.zip
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Local storage / sqlite
+*.sqlite
+*.db
+
+# Clerk / auth secrets
+clerk.env

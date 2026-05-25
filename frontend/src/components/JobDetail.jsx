@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { downloadFile, getJob } from '../lib/api.js';
 import { useJobPoller } from '../hooks/useJobPoller.js';
-import { downloadFile } from '../lib/api.js';
 
 const FILE_INFO = {
   'erd_chen.png': { icon: '🔷', label: 'Chen Notation ERD', desc: 'Entity-relationship diagram (Chen style)', color: 'rgba(54,173,163,0.15)', border: 'rgba(54,173,163,0.3)' },
@@ -66,6 +66,20 @@ export default function JobDetail({ job: initialJob, onUpdate }) {
     (data) => { setJob(data); onUpdate?.(data); }
   );
 
+  // Self-heal: if done but no files, fetch fresh data
+  useEffect(() => {
+    if (job?.status === 'done') {
+      const files = extractFileValues(job);
+      if (files.length === 0) {
+        getJob(job.id).then(fresh => {
+          if (fresh) {
+            setJob(fresh);
+            onUpdate?.(fresh);
+          }
+        }).catch(() => { });
+      }
+    }
+  }, [job?.status]);
   // Auto-scroll the step log to the bottom whenever steps change
   useEffect(() => {
     if (logRef.current) {

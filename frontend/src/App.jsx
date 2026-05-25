@@ -82,19 +82,20 @@ export default function App() {
   }
 
   async function handleJobUpdate(updatedJob) {
-    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
-    if (selectedJob?.id === updatedJob.id) setSelectedJob(updatedJob);
-    if (updatedJob.status === 'done') {
-      addToast('Assignment ready to download!', 'success');
+    // For done/failed, immediately fetch fresh copy with files from disk
+    if (updatedJob.status === 'done' || updatedJob.status === 'failed') {
       try {
         const fresh = await getJob(updatedJob.id);
-        if (fresh) {
-          setSelectedJob(fresh);
-          setJobs(prev => prev.map(j => j.id === fresh.id ? fresh : j));
-        }
+        const finalJob = fresh || updatedJob;
+        setJobs(prev => prev.map(j => j.id === finalJob.id ? finalJob : j));
+        if (selectedJob?.id === finalJob.id) setSelectedJob(finalJob);
+        if (updatedJob.status === 'done') addToast('Assignment ready to download!', 'success');
+        if (updatedJob.status === 'failed') addToast('Job failed. Please try again.', 'error');
+        return;
       } catch { }
     }
-    if (updatedJob.status === 'failed') addToast('Job failed. Please try again.', 'error');
+    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+    if (selectedJob?.id === updatedJob.id) setSelectedJob(updatedJob);
   }
 
   async function handleSelectJob(job) {

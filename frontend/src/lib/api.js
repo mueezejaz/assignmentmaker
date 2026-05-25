@@ -1,5 +1,8 @@
 import axios from 'axios';
 
+// In development Vite's proxy forwards /api → http://localhost:3001/api.
+// In production the Express server itself serves /api, so the relative path
+// works in both environments without any env-var gymnastics.
 const api = axios.create({
   baseURL: '/api',
   withCredentials: true,

@@ -10,8 +10,6 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@clerk/clerk-react": "^4.30.0",
-    "lucide-react": "^0.383.0",
     "axios": "^1.6.0"
   },
   "devDependencies": {

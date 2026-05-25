@@ -23,7 +23,7 @@ export const userMermaidCache = {};
 export async function generateMermaidERD(job) {
   const { scenario, userId } = job.payload;
   console.log("this is scenario", scenario);
-  job.addStep('🤖 Asking Gemini to design the ERD in Graphviz DOT notation...');
+  job.addStep('Asking Gemini to design the ERD....');
 
   const prompt = `You are a senior database architect and ERD specialist.
 
@@ -146,7 +146,7 @@ End with:
   userMermaidCache[userId] = dotCode;
 
   saveFile(userId, job.id, 'erd.dot', dotCode);
-  job.addStep('✅ ERD Graphviz DOT code generated and saved.');
+  job.addStep('ERD Graphviz DOT code generated and saved.');
   return dotCode;
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ function generateChenNotationDOT(crowsfootDot) {
 // STEP 2: Convert Graphviz DOT → PNG using the dot CLI (HIGH RESOLUTION)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function convertMermaidToPNG(job, dotCode) {
-  job.addStep('🖼️ Rendering Graphviz DOT ERD to PNG...');
+  job.addStep('Rendering Graphviz DOT ERD to PNG...');
 
   const jobDir = getJobDir(job.payload.userId, job.id);
 
@@ -315,14 +315,14 @@ export async function convertMermaidToPNG(job, dotCode) {
       `dot -Tpng -Gdpi=300 "${dotPath}" -o "${pngPath}"`,
       { cwd: jobDir, timeout: 60000 }
     );
-    job.addStep('✅ Crow\'s foot ERD rendered to PNG (300 DPI).');
+    job.addStep('Crow\'s foot ERD rendered to PNG (300 DPI).');
 
     // ── Render Chen notation ERD at high DPI ────────────────────────────────
     await execAsync(
       `dot -Tpng -Gdpi=300 "${chenDotPath}" -o "${chenPngPath}"`,
       { cwd: jobDir, timeout: 60000 }
     );
-    job.addStep('✅ Chen notation ERD rendered to PNG (300 DPI).');
+    job.addStep('Chen notation ERD rendered to PNG (300 DPI).');
 
     return { crowsfoot: pngPath, chen: chenPngPath };
   } catch (err) {
@@ -472,7 +472,7 @@ function generateFallbackSVG(dotCode) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateLatexDoc(job) {
   const { scenario, userId } = job.payload;
-  job.addStep('📄 Generating structured report content with Gemini...');
+  job.addStep('Generating structured report content with Gemini...');
 
   const cachedDot = userMermaidCache[userId] || '';
 
@@ -571,7 +571,7 @@ ${cachedDot}
   }
 
   saveFile(userId, job.id, 'report.json', JSON.stringify(reportData, null, 2));
-  job.addStep('✅ Report content generated and saved.');
+  job.addStep('Report content generated and saved.');
   return reportData;
 }
 
@@ -592,7 +592,7 @@ function fixCommonJsonIssues(str) {
 // STEP 4: Build clean DOCX from structured JSON using docx package
 // ─────────────────────────────────────────────────────────────────────────────
 export async function convertLatexToDocx(job, reportData) {
-  job.addStep('📝 Building professional Word document...');
+  job.addStep('Building professional Word document...');
   const jobDir = getJobDir(job.payload.userId, job.id);
   const docxPath = path.join(jobDir, 'report.docx');
 
@@ -800,7 +800,7 @@ export async function convertLatexToDocx(job, reportData) {
 
   const buffer = await Packer.toBuffer(doc);
   fs.writeFileSync(docxPath, buffer);
-  job.addStep('✅ Word document built successfully.');
+  job.addStep('Word document built successfully.');
   return docxPath;
 }
 
@@ -809,7 +809,7 @@ export async function convertLatexToDocx(job, reportData) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generatePythonCode(job) {
   const { scenario, userId } = job.payload;
-  job.addStep('🐍 Generating Python script to create the MS Access database...');
+  job.addStep('Generating script to create the MS Access database...');
 
   const cachedDot = userMermaidCache[userId] || '';
 
@@ -960,7 +960,7 @@ ${cachedDot}
     .trim();
 
   saveFile(userId, job.id, 'create_database.py', clean);
-  job.addStep('✅ Python database creation script generated and saved.');
+  job.addStep('database creation script generated and saved.');
   return clean;
 }
 
@@ -968,14 +968,14 @@ ${cachedDot}
 // STEP 6: Run Python (Windows only) or save README
 // ─────────────────────────────────────────────────────────────────────────────
 export async function runPythonScript(job) {
-  job.addStep('⚙️ Note: .accdb generation requires Windows with MS Access installed.');
-  job.addStep('📦 Python script saved and ready to run on your Windows machine.');
+  job.addStep('️ Note: .accdb generation requires Windows with MS Access installed.');
+  job.addStep(' script saved and ready to run on your Windows machine.');
 
   const jobDir = getJobDir(job.payload.userId, job.id);
   const pyPath = path.join(jobDir, 'create_database.py');
 
   if (process.platform !== 'win32') {
-    job.addStep('ℹ️ Running on Linux server — Python script saved for Windows execution.');
+    job.addStep('️ Running on Linux server — Python script saved for Windows execution.');
     const readme = `# Database Creation Instructions
 
 ## Prerequisites (Windows only)
@@ -1004,7 +1004,7 @@ export async function runPythonScript(job) {
 
   try {
     const { stdout } = await execAsync(`py "${pyPath}"`, { timeout: 60000, cwd: jobDir });
-    job.addStep(`✅ Python script executed successfully:\n${stdout}`);
+    job.addStep(`script executed successfully`);
     return { stdout, accdbPath: path.join(jobDir, 'StudentAttendanceSystem.accdb') };
   } catch (err) {
     throw new Error(`Python execution failed: ${err.message}`);

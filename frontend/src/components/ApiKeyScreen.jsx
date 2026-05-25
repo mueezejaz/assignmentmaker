@@ -76,6 +76,9 @@ export default function ApiKeyScreen({ onAuth }) {
                         Get a free key at Google AI Studio →
                     </a>
                 </div>
+                <div style={{ fontSize: 12, color: 'var(--text-dim)', textAlign: 'center', lineHeight: 1.7 }}>
+                    made by team MH
+                </div>
             </div>
         </div>
     );

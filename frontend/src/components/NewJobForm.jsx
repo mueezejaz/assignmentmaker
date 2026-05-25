@@ -90,7 +90,7 @@ export default function NewJobForm({ onJobCreated }) {
           {loading ? (
             <><span className="spinner" /> Creating Job...</>
           ) : (
-            <><Wand2 size={15} /> Generate Full Assignment</>
+            "Generate Full Assignment"
           )}
         </button>
       </form>

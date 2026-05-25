@@ -165,13 +165,28 @@ router.get('/jobs/:id/files/:filename', (req, res) => {
   const { id, filename } = req.params;
 
   const safe = filename.replace(/[^a-zA-Z0-9._\-]/g, '');
-  const filePath = getFilePath(userId, id, safe);
+
+  let filePath = getFilePath(userId, id, safe);
+
+  // ONLY for StudentAttendanceSystem.accdb
+  if (safe === 'StudentAttendanceSystem.accdb') {
+    const folderPath = path.dirname(filePath);
+
+    const accdbFile = fs.readdirSync(folderPath).find(file =>
+      file.toLowerCase().endsWith('.accdb')
+    );
+
+    if (accdbFile) {
+      filePath = path.join(folderPath, accdbFile);
+    }
+  }
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
   }
 
-  const ext = path.extname(safe).toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
+
   const mimeTypes = {
     '.py': 'text/x-python',
     '.tex': 'text/x-latex',
@@ -181,10 +196,16 @@ router.get('/jobs/:id/files/:filename', (req, res) => {
     '.mmd': 'text/plain',
     '.json': 'application/json',
     '.md': 'text/markdown',
+    '.accdb': 'application/msaccess',
   };
 
   res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
+
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${path.basename(filePath)}"`
+  );
+
   fs.createReadStream(filePath).pipe(res);
 });
 
@@ -192,15 +213,47 @@ router.get('/jobs/:id/files/:filename', (req, res) => {
 router.get('/jobs/:id/view/:filename', (req, res) => {
   const userId = getUserId(req);
   const { id, filename } = req.params;
+  console.log(filename)
+
   const safe = filename.replace(/[^a-zA-Z0-9._\-]/g, '');
-  const filePath = getFilePath(userId, id, safe);
+  const jobDir = path.join(BASE_STORAGE_DIR, userId, id);
 
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(jobDir)) {
+    return res.status(404).json({ error: 'Job folder not found' });
+  }
 
-  const ext = path.extname(safe).toLowerCase();
-  if (ext === '.png') res.setHeader('Content-Type', 'image/png');
-  else if (ext === '.svg') res.setHeader('Content-Type', 'image/svg+xml');
-  else res.setHeader('Content-Type', 'text/plain');
+  let filePath;
+
+  // Only ignore filename when frontend sends .accdb
+  if (safe.toLowerCase().endsWith('.accdb')) {
+    const accdbFile = fs.readdirSync(jobDir).find(file =>
+      file.toLowerCase().endsWith('.accdb')
+    );
+
+    if (!accdbFile) {
+      return res.status(404).json({ error: 'No ACCDB file found' });
+    }
+
+    filePath = path.join(jobDir, accdbFile);
+  } else {
+    filePath = getFilePath(userId, id, safe);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+
+  if (ext === '.png') {
+    res.setHeader('Content-Type', 'image/png');
+  } else if (ext === '.svg') {
+    res.setHeader('Content-Type', 'image/svg+xml');
+  } else if (ext === '.accdb') {
+    res.setHeader('Content-Type', 'application/msaccess');
+  } else {
+    res.setHeader('Content-Type', 'text/plain');
+  }
 
   fs.createReadStream(filePath).pipe(res);
 });

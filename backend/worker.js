@@ -26,7 +26,7 @@ import { initGemini, hasClient } from './services/gemini.js';
 import { loadUserMeta } from './storage/storage.js';
 import { seg } from './seg/seg.js';
 
-const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || '2', 10);
+const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || '30', 10);
 
 console.log(`\n🔧 Assignment Worker starting...`);
 console.log(`   Concurrency: ${CONCURRENCY} jobs at once`);

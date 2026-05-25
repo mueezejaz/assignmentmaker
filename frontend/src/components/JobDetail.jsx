@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useJobPoller } from '../hooks/useJobPoller.js';
 import { downloadFile } from '../lib/api.js';
 
@@ -12,19 +12,10 @@ const FILE_INFO = {
 
 const ACCDB_INFO = { icon: '🗄️', label: 'MS Access Database', desc: '.accdb database file', color: 'rgba(54,173,163,0.1)', border: 'rgba(54,173,163,0.3)' };
 
-// Priority order for display — only these 4 types shown
 const WANTED = ['erd_chen.png', 'erd_chen.svg', 'erd.png', 'erd.svg', 'report.docx'];
 
-/**
- * Extract all unique file values from the files map.
- * The worker stores: { erdImage: 'erd.png', erdChen: 'erd_chen.png', docx: 'report.docx', ... }
- * job.json on disk has the same shape under the top-level `files` key.
- * The BullMQ returnvalue wraps it as { files: {...}, jobDir: '...' }
- * So we check both job.result?.files and job.files directly.
- */
 function extractFileValues(job) {
   const src = job?.result?.files || job?.files || {};
-  // values are the actual filenames e.g. 'erd.png'
   return Object.values(src).filter(Boolean);
 }
 
@@ -68,35 +59,43 @@ function formatTs(ts) {
 
 export default function JobDetail({ job: initialJob, onUpdate }) {
   const [job, setJob] = useState(initialJob);
+  const logRef = useRef(null);
 
   useJobPoller(
     job?.status === 'done' || job?.status === 'failed' ? null : job?.id,
     (data) => { setJob(data); onUpdate?.(data); }
   );
 
+  // Auto-scroll the step log to the bottom whenever steps change
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [job?.steps?.length]);
+
   if (!job) return null;
 
   const steps = job.steps || [];
   const progress = getProgress(steps, job.status);
+  const isDone = job.status === 'done';
+  const isFailed = job.status === 'failed';
+  const isRunning = job.status === 'running' || job.status === 'queued';
 
-  // Get all available file values (the actual filenames)
+  // Get all available file values
   const allFiles = extractFileValues(job);
 
-  // Files we want to show, in priority order, deduped (prefer .png over .svg)
+  // Files to show, deduped (prefer .png over .svg)
   const shownFiles = [];
-  // Track which "type" we've already added to avoid showing both png and svg of same diagram
   const typeSeen = new Set();
   for (const fname of WANTED) {
-    const typeKey = fname.replace(/\.(png|svg)$/, ''); // e.g. 'erd_chen', 'erd', 'report'
+    const typeKey = fname.replace(/\.(png|svg)$/, '');
     if (!typeSeen.has(typeKey) && allFiles.includes(fname)) {
       shownFiles.push(fname);
       typeSeen.add(typeKey);
     }
   }
 
-  // .accdb file (any filename ending in .accdb)
   const accdbFile = allFiles.find(f => f && f.endsWith('.accdb'));
-
   const hasReadme = allFiles.includes('README.md');
   const totalShown = shownFiles.length + (accdbFile ? 1 : 0);
 
@@ -121,7 +120,8 @@ export default function JobDetail({ job: initialJob, onUpdate }) {
         </div>
       )}
 
-      {(job.status === 'running' || job.status === 'queued') && (
+      {/* Progress bar — only while running */}
+      {isRunning && (
         <div className="progress-wrap">
           <div className="progress-info">
             <span>{steps.length} steps completed</span>
@@ -133,30 +133,37 @@ export default function JobDetail({ job: initialJob, onUpdate }) {
         </div>
       )}
 
-      <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
-        Live Progress
-      </div>
-      <div className="step-log">
-        {steps.length === 0 ? (
-          <span style={{ color: 'var(--text-dim)' }}>Waiting to start...</span>
-        ) : steps.map((step, i) => (
-          <div key={i} className="step-row">
-            <span className="step-ts">{formatTs(step.ts)}</span>
-            <span className="step-icon">
-              {i < steps.length - 1 || job.status === 'done' ? '✓' :
-                step.state === 'error' ? '✗' : '▸'}
-            </span>
-            <span className={`step-msg ${(i < steps.length - 1 || job.status === 'done') && job.status !== 'failed' ? 'done' : step.state === 'error' ? 'error' : ''}`}>
-              {step.message}
-              {i === steps.length - 1 && job.status === 'running' && (
-                <span className="pulse" style={{ marginLeft: 6, color: 'var(--teal)' }}>▮</span>
-              )}
-            </span>
+      {/* Step log — only while running or failed (hidden when done) */}
+      {!isDone && (
+        <>
+          <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+            Live Progress
           </div>
-        ))}
-      </div>
+          <div className="step-log" ref={logRef}>
+            {steps.length === 0 ? (
+              <span style={{ color: 'var(--text-dim)' }}>Waiting to start...</span>
+            ) : steps.map((step, i) => (
+              <div key={i} className="step-row">
+                <span className="step-ts">{formatTs(step.ts)}</span>
+                <span className="step-icon">
+                  {isFailed
+                    ? (i < steps.length - 1 ? '✓' : '✗')
+                    : (i < steps.length - 1 ? '✓' : '▸')}
+                </span>
+                <span className={`step-msg ${i < steps.length - 1 ? 'done' : step.state === 'error' ? 'error' : ''}`}>
+                  {step.message}
+                  {i === steps.length - 1 && job.status === 'running' && (
+                    <span className="pulse" style={{ marginLeft: 6, color: 'var(--teal)' }}>▮</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      {job.status === 'done' && (
+      {/* Files section — only when done */}
+      {isDone && (
         <div className="files-section animate-in">
           <div className="banner banner-success">
             ✓ Assignment generated successfully — {totalShown} file{totalShown !== 1 ? 's' : ''} ready to download
@@ -190,7 +197,8 @@ export default function JobDetail({ job: initialJob, onUpdate }) {
         </div>
       )}
 
-      {job.status === 'failed' && (
+      {/* Error state */}
+      {isFailed && (
         <div className="banner banner-error" style={{ flexDirection: 'column', gap: 6 }}>
           <strong>Generation failed</strong>
           <span style={{ fontSize: 13, opacity: 0.8 }}>{job.error}</span>

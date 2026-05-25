@@ -61,6 +61,7 @@ router.delete('/api-key', (req, res) => {
 router.post('/jobs', (req, res) => {
   const userId = getUserId(req);
   const { scenario } = req.body;
+  console.log("tis is ", scenario)
 
   if (!scenario) return res.status(400).json({ error: 'Scenario description required' });
 

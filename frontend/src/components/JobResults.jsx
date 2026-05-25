@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import {
   FileCode, FileText, Image, File, Download, Eye,
-  ExternalLink, Package, CheckCircle
+  Package, CheckCircle, Loader2
 } from 'lucide-react';
-import { fileDownloadUrl, fileViewUrl } from '../lib/api.js';
+import { downloadFile, viewFile } from '../lib/api.js';
 
 const FILE_META = {
-  'erd.mmd':                  { icon: FileCode,  label: 'ERD Mermaid Source',       desc: 'Raw Mermaid diagram code',          color: '#7c4dff' },
-  'erd.png':                  { icon: Image,     label: 'ERD Diagram (PNG)',         desc: 'Entity Relationship Diagram image', color: '#00b0ff' },
-  'erd.svg':                  { icon: Image,     label: 'ERD Diagram (SVG)',         desc: 'Vector ERD diagram',                color: '#00b0ff' },
-  'report.tex':               { icon: FileText,  label: 'LaTeX Document',            desc: 'Business scenario in LaTeX',        color: '#ff6d00' },
-  'report.docx':              { icon: FileText,  label: 'Word Document (.docx)',     desc: 'Ready-to-submit Word document',     color: '#2196f3' },
-  'create_database.py':       { icon: FileCode,  label: 'Python DB Script',          desc: 'Run on Windows to create .accdb',   color: '#ffeb3b' },
-  'StudentAttendanceSystem.accdb': { icon: Package, label: 'MS Access Database',    desc: 'Functional .accdb database file',   color: '#e91e63' },
-  'README.md':                { icon: FileText,  label: 'Instructions (README)',     desc: 'How to create the .accdb file',     color: '#4caf50' },
+  'erd.mmd': { icon: FileCode, label: 'ERD Mermaid Source', desc: 'Raw Mermaid diagram code', color: '#7c4dff' },
+  'erd.png': { icon: Image, label: 'ERD Diagram (PNG)', desc: 'Entity Relationship Diagram image', color: '#00b0ff' },
+  'erd.svg': { icon: Image, label: 'ERD Diagram (SVG)', desc: 'Vector ERD diagram', color: '#00b0ff' },
+  'report.tex': { icon: FileText, label: 'LaTeX Document', desc: 'Business scenario in LaTeX', color: '#ff6d00' },
+  'report.docx': { icon: FileText, label: 'Word Document (.docx)', desc: 'Ready-to-submit Word document', color: '#2196f3' },
+  'create_database.py': { icon: FileCode, label: 'Python DB Script', desc: 'Run on Windows to create .accdb', color: '#ffeb3b' },
+  'StudentAttendanceSystem.accdb': { icon: Package, label: 'MS Access Database', desc: 'Functional .accdb database file', color: '#e91e63' },
+  'README.md': { icon: FileText, label: 'Instructions (README)', desc: 'How to create the .accdb file', color: '#4caf50' },
 };
 
 function getFileMeta(filename) {
@@ -25,10 +25,36 @@ function getFileMeta(filename) {
 function FileCard({ jobId, filename }) {
   const meta = getFileMeta(filename);
   const Icon = meta.icon;
-  const downloadUrl = fileDownloadUrl(jobId, filename);
-  const viewUrl = fileViewUrl(jobId, filename);
-  const isImage = filename.endsWith('.png') || filename.endsWith('.svg');
-  const isViewable = isImage || filename.endsWith('.tex') || filename.endsWith('.mmd') || filename.endsWith('.md') || filename.endsWith('.py');
+  const isViewable = filename.endsWith('.png') || filename.endsWith('.svg')
+    || filename.endsWith('.tex') || filename.endsWith('.mmd')
+    || filename.endsWith('.md') || filename.endsWith('.py');
+
+  const [downloading, setDownloading] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const [dlError, setDlError] = useState('');
+
+  async function handleDownload() {
+    setDownloading(true);
+    setDlError('');
+    try {
+      await downloadFile(jobId, filename);
+    } catch (err) {
+      setDlError('Download failed: ' + (err?.response?.data?.error || err.message));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleView() {
+    setViewing(true);
+    try {
+      await viewFile(jobId, filename);
+    } catch (err) {
+      // fallback: nothing
+    } finally {
+      setViewing(false);
+    }
+  }
 
   return (
     <div style={{
@@ -40,8 +66,8 @@ function FileCard({ jobId, filename }) {
       marginBottom: 10,
       transition: 'border-color 0.2s',
     }}
-    onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(150,30,30,0.5)'}
-    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(150,30,30,0.5)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
     >
       <div style={{
         width: 40, height: 40, borderRadius: 4,
@@ -60,23 +86,40 @@ function FileCard({ jobId, filename }) {
           {filename}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>{meta.desc}</div>
+        {dlError && (
+          <div style={{ fontSize: 11, color: 'var(--crimson-100)', marginTop: 4 }}>{dlError}</div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
         {isViewable && (
-          <a href={viewUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }}>
-            <Eye size={12} /> View
-          </a>
+          <button
+            onClick={handleView}
+            disabled={viewing}
+            className="btn btn-ghost"
+            style={{ padding: '6px 12px', fontSize: 11 }}
+          >
+            {viewing ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Eye size={12} />}
+            View
+          </button>
         )}
-        <a href={downloadUrl} download className="btn btn-gold" style={{ padding: '6px 14px', fontSize: 11 }}>
-          <Download size={12} /> Download
-        </a>
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="btn btn-gold"
+          style={{ padding: '6px 14px', fontSize: 11 }}
+        >
+          {downloading
+            ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            : <Download size={12} />
+          }
+          {downloading ? 'Saving...' : 'Download'}
+        </button>
       </div>
     </div>
   );
 }
 
 export default function JobResults({ job }) {
-  const [activeTab, setActiveTab] = useState('files');
   if (!job) return null;
 
   const files = job.result?.files ? Object.values(job.result.files) : [];
@@ -99,7 +142,7 @@ export default function JobResults({ job }) {
               Assignment Generated Successfully
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {uniqueFiles.length} files created · Download all files below
+              {uniqueFiles.length} files created · Click Download on any file below
             </div>
           </div>
         </div>
@@ -118,7 +161,7 @@ export default function JobResults({ job }) {
           <strong style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>Generation Failed</strong>
           <p style={{ marginTop: 6, fontSize: 13, color: 'var(--text-muted)' }}>{job.error}</p>
           <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-            Please check your Gemini API key or try again. If the problem persists, contact your administrator.
+            Please check your Gemini API key or try again.
           </p>
         </div>
       )}

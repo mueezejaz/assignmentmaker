@@ -70,7 +70,7 @@ function MainApp({ user, onSignOut }) {
         if (!status.hasKey) {
           setShowApiKeyModal(true);
         }
-      } catch {}
+      } catch { }
 
       setJobsLoading(true);
       try {
@@ -79,7 +79,7 @@ function MainApp({ user, onSignOut }) {
         // Auto-select most recent running or done job
         const recent = (data.jobs || []).find(j => j.status === 'running' || j.status === 'done');
         if (recent) setSelectedJob(recent);
-      } catch {}
+      } catch { }
       setJobsLoading(false);
     }
     init();
@@ -91,19 +91,20 @@ function MainApp({ user, onSignOut }) {
       try {
         const data = await listJobs();
         setJobs(data.jobs || []);
-      } catch {}
+      } catch { }
     }, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  function handleJobCreated(jobData) {
+  // FIX: onJobCreated now receives { jobId, status, scenario } from NewJobForm
+  function handleJobCreated({ jobId, status, scenario }) {
     const fakeJob = {
-      id: jobData.jobId,
+      id: jobId,
       type: 'generate-assignment',
-      status: jobData.status || 'queued',
+      status: status || 'queued',
       steps: [],
       createdAt: Date.now(),
-      payload: { scenario: '' },
+      payload: { scenario: scenario || '' },
     };
     setJobs(prev => [fakeJob, ...prev]);
     setSelectedJob(fakeJob);
@@ -124,8 +125,9 @@ function MainApp({ user, onSignOut }) {
 
   async function handleRetry(job) {
     try {
-      const data = await createJob(job.payload?.scenario || '');
-      handleJobCreated(data);
+      const scenario = job.payload?.scenario || '';
+      const data = await createJob(scenario);
+      handleJobCreated({ ...data, scenario });
     } catch (err) {
       addToast(`Retry failed: ${err.message}`, 'error');
     }
@@ -140,7 +142,6 @@ function MainApp({ user, onSignOut }) {
         hasApiKey={hasApiKey}
       />
 
-      {/* API Key Modal — shown if no key set OR manually opened */}
       {showApiKeyModal && (
         <ApiKeyModal
           onSuccess={() => {
@@ -152,9 +153,7 @@ function MainApp({ user, onSignOut }) {
         />
       )}
 
-      {/* Main Layout */}
       <div className="app-layout" style={{ flex: 1 }}>
-        {/* Sidebar */}
         <aside className="sidebar">
           <NewJobForm onJobCreated={handleJobCreated} />
           <JobsSidebar
@@ -165,7 +164,6 @@ function MainApp({ user, onSignOut }) {
           />
         </aside>
 
-        {/* Main panel */}
         <main className="main-panel">
           {selectedJob ? (
             <JobDetail
@@ -181,7 +179,6 @@ function MainApp({ user, onSignOut }) {
         </main>
       </div>
 
-      {/* Toasts */}
       {toasts.map(t => (
         <Toast key={t.id} message={t.message} type={t.type} onDismiss={() => removeToast(t.id)} />
       ))}

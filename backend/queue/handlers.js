@@ -12,7 +12,6 @@ import { saveJobMeta } from '../storage/storage.js';
 export function registerHandlers() {
   queue.register('generate-assignment', async (job) => {
     const { userId } = job.payload;
-
     // Save initial job meta
     saveJobMeta(userId, job.id, {
       id: job.id,

@@ -13,18 +13,31 @@ import {
 const execAsync = promisify(exec);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL CACHE: Store Mermaid code by userId
+// ─────────────────────────────────────────────────────────────────────────────
+export const userMermaidCache = {};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STEP 1: Generate Mermaid ERD
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateMermaidERD(job) {
   const { scenario, userId } = job.payload;
+  console.log("this is scenario", scenario)
   job.addStep('🤖 Asking Gemini to design the ERD in Mermaid notation...');
 
   const prompt = `You are a senior database architect and ERD specialist.
 
-Given this university system scenario:
+The user has provided this specific scenario:
 "${scenario}"
 
-Generate a PROFESSIONAL and SYNTACTICALLY CORRECT Mermaid ER diagram for a University Management System.
+CRITICAL INSTRUCTION: You MUST base your entire ERD design on the scenario above. Identify the real-world domain (it may be a hospital, library, hotel, school, e-commerce system, etc.) and derive entity names, attributes, and relationships that make sense FOR THAT SPECIFIC SCENARIO. Do NOT default to a generic university system. Every entity name, attribute name, and relationship label must reflect the actual domain described in the scenario.
+
+Analyze the scenario and identify:
+1. The core entities that exist in this domain (e.g., if it's a hospital: Patient, Doctor, Ward, etc.)
+2. The attributes each entity should have based on the scenario
+3. The relationships between those entities
+
+Then generate a PROFESSIONAL and SYNTACTICALLY CORRECT Mermaid ER diagram for this system.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL MERMAID SYNTAX RULES — FOLLOW EXACTLY OR THE DIAGRAM WILL FAIL
@@ -33,14 +46,10 @@ CRITICAL MERMAID SYNTAX RULES — FOLLOW EXACTLY OR THE DIAGRAM WILL FAIL
 RULE 1 — First line MUST be exactly:
 erDiagram
 
-RULE 2 — Use ONLY these seven entity names (no others):
-  Department
-  Teacher
-  Student
-  Course
-  Section
-  Enrollment
-  Attendance
+RULE 2 — Derive 6–9 entity names from the scenario. Use PascalCase, no spaces.
+  Examples for a hospital: Patient, Doctor, Ward, Appointment, Prescription, Department
+  Examples for a library: Member, Book, Author, Loan, Category, Branch
+  The entities MUST reflect the actual domain of the scenario provided.
 
 RULE 3 — Each entity block MUST follow this exact format with NO deviations:
   EntityName {
@@ -53,7 +62,7 @@ RULE 3 — Each entity block MUST follow this exact format with NO deviations:
   - Each attribute on its own indented line
   - Closing brace } on its own line
   - NO quotes around entity names
-  - NO spaces inside attribute names (e.g. use DeptID not Dept ID)
+  - NO spaces inside attribute names (e.g. use PatientID not Patient ID)
 
 RULE 4 — Allowed data types ONLY (use exactly as written):
   int
@@ -73,7 +82,7 @@ RULE 6 — Relationship statement format MUST be exactly:
   EntityA CONNECTOR EntityB : "label"
 
   - Label MUST be in double quotes
-  - Use short, clear verbs: "employs", "has", "offers", "teaches", "enrolls", "records", "attends"
+  - Use short, clear verbs relevant to the scenario domain
   - One relationship statement per line
 
 RULE 7 — STRICT PROHIBITIONS (any of these will break the diagram):
@@ -87,32 +96,17 @@ RULE 7 — STRICT PROHIBITIONS (any of these will break the diagram):
   - NO trailing whitespace on relationship lines
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REQUIRED ENTITY ATTRIBUTES
+ATTRIBUTE GUIDELINES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Department  → DeptID PK, DeptName, Location, EstablishedYear
-Teacher     → TeacherID PK, FullName, Email, Phone, DeptID FK
-Student     → StudentID PK, FullName, RollNo, Email, DeptID FK
-Course      → CourseID PK, CourseName, CourseCode, CreditHours, DeptID FK
-Section     → SectionID PK, SectionName, Semester, AcademicYear, CourseID FK, TeacherID FK
-Enrollment  → EnrollmentID PK, StudentID FK, SectionID FK, EnrollDate, Grade
-Attendance  → AttendanceID PK, EnrollmentID FK, AttendanceDate, Status
+For each entity derived from the scenario:
+- Include a primary key (ID field) marked PK
+- Include 3–6 meaningful attributes that reflect the real domain
+- Include foreign key fields (marked FK) where relationships exist
+- Attribute names must be camelCase or PascalCase, no spaces
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REQUIRED RELATIONSHIPS (include ALL of these)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Department ||--|{ Teacher : "employs"
-Department ||--|{ Student : "has"
-Department ||--|{ Course : "offers"
-Course ||--|{ Section : "has"
-Teacher ||--|{ Section : "teaches"
-Student ||--|{ Enrollment : "enrolls"
-Section ||--|{ Enrollment : "contains"
-Enrollment ||--|{ Attendance : "records"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXACT EXAMPLE OF CORRECT FORMAT
+EXACT FORMAT EXAMPLE (for a HOSPITAL scenario — adapt yours to YOUR scenario domain)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 erDiagram
@@ -123,15 +117,15 @@ erDiagram
         int EstablishedYear
     }
 
-    Teacher {
-        int TeacherID PK
+    Doctor {
+        int DoctorID PK
         string FullName
+        string Specialization
         string Email
-        string Phone
         int DeptID FK
     }
 
-    Department ||--|{ Teacher : "employs"
+    Department ||--|{ Doctor : "employs"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -147,6 +141,10 @@ End with:
   if (!mermaidMatch) throw new Error('Gemini did not return a valid Mermaid code block.');
 
   const mermaidCode = mermaidMatch[1].trim();
+
+  // Store the Mermaid code in the global object
+  userMermaidCache[userId] = mermaidCode;
+
   saveFile(userId, job.id, 'erd.mmd', mermaidCode);
   job.addStep('✅ ERD Mermaid code generated and saved.');
   return mermaidCode;
@@ -195,10 +193,7 @@ function generateFallbackSVG(mermaidCode) {
 
   // ── Parse relationships ─────────────────────────────────────────────────────
   const relationships = [];
-  const relPattern = /^(\w+)\s+(\|\|--\|\||[|{][\|o]-[-|o][|{]\||\|\|--o{|}o--\|\||\|\|-\-\|{|}[\|]-\-[|{]|\|\|--\|{|}[|o]--\|\||\|\|--\|\{|}o--\|[|]|\|\|--\|[{]|}[|]--\|[{]|[|][|]--[|][{]|}[|]--|[{]|\|\|--\|{|}\|--\|\||[|][|]-\-[|][|]|\S+)\s+(\w+)\s*:\s*"?([^"]+)"?$/;
-
   for (const line of lines) {
-    // Match any relationship line: EntityA <connector> EntityB : "label"
     const m = line.match(/^(\w+)\s+(\S+)\s+(\w+)\s*:\s*"?([^"]+)"?$/);
     if (m && !line.match(/^(int|string|date|boolean|float)/i) && !m[1].match(/^(int|string|date|boolean|float)$/i)) {
       relationships.push({ from: m[1], connector: m[2], to: m[3], label: m[4].replace(/"/g, '') });
@@ -212,7 +207,6 @@ function generateFallbackSVG(mermaidCode) {
   const PADDING = 60;
   const COLS = 3;
 
-  // Position entities in a grid
   const positions = {};
   entities.forEach((e, i) => {
     const col = i % COLS;
@@ -229,19 +223,15 @@ function generateFallbackSVG(mermaidCode) {
   const maxAttrCount = Math.max(...entities.map(e => e.attrs.length), 0);
   const svgH = PADDING + totalRows * (HEADER_H + ROW_H * maxAttrCount + PADDING * 2.5) + 60;
 
-  // ── Draw relationship lines ─────────────────────────────────────────────────
   const linesSVG = relationships.map(rel => {
     const a = positions[rel.from];
     const b = positions[rel.to];
     if (!a || !b) return '';
 
-    // Connect center-right of A to center-left of B (or adjust for layout)
     const ax = a.x + a.w;
     const ay = a.y + a.h / 2;
     const bx = b.x;
     const by = b.y + b.h / 2;
-
-    // Simple curved path
     const mx = (ax + bx) / 2;
     const labelX = mx;
     const labelY = (ay + by) / 2 - 8;
@@ -255,7 +245,6 @@ function generateFallbackSVG(mermaidCode) {
           font-family="Arial" font-size="10" fill="#333333">${rel.label}</text>`;
   }).join('');
 
-  // ── Draw entity boxes ───────────────────────────────────────────────────────
   const boxesSVG = entities.map(e => {
     const { x, y, w, h } = positions[e.name];
 
@@ -276,7 +265,6 @@ function generateFallbackSVG(mermaidCode) {
     }).join('');
 
     return `
-    <!-- Entity: ${e.name} -->
     <rect x="${x}" y="${y}" width="${w}" height="${h}"
           fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="2"/>
     <rect x="${x}" y="${y}" width="${w}" height="${HEADER_H}"
@@ -301,18 +289,14 @@ function generateFallbackSVG(mermaidCode) {
     </marker>
   </defs>
 
-  <!-- White background -->
   <rect width="100%" height="100%" fill="#ffffff"/>
 
-  <!-- Title -->
   <text x="${svgW / 2}" y="32" text-anchor="middle"
         font-family="Arial" font-size="18" font-weight="bold"
         fill="#000000">Entity Relationship Diagram</text>
 
-  <!-- Relationship lines (drawn behind boxes) -->
   ${linesSVG}
 
-  <!-- Entity boxes -->
   ${boxesSVG}
 
 </svg>`;
@@ -325,66 +309,133 @@ export async function generateLatexDoc(job) {
   const { scenario, userId } = job.payload;
   job.addStep('📄 Generating structured report content with Gemini...');
 
-  const prompt = `You are an academic technical writer for a university database course.
-Given this scenario: "${scenario}"
+  // Get the cached Mermaid code to enforce table consistency
+  const cachedMermaid = userMermaidCache[userId] || '';
 
-Write a comprehensive design report for a University Management System database with these 7 tables:
-Department, Teacher, Student, Course, Section, Enrollment, Attendance.
+  const prompt = `You are an academic technical writer for a database design course.
 
-Return ONLY a valid JSON object with this exact structure (no markdown fences, no extra text):
+The user has provided this specific scenario:
+"${scenario}"
+
+CRITICAL INSTRUCTION: Analyze the scenario above carefully. Identify the real-world domain it describes (e.g., hospital management, library system, hotel booking, e-commerce, school administration, etc.). ALL content you generate — the title, entities, attributes, relationships, business rules — MUST reflect THIS specific scenario. Do NOT use generic university/student content unless the scenario explicitly describes a university.
+
+Based on the scenario, identify 6–9 core entities, their attributes, and the relationships between them.
+
+Write a comprehensive database design report for this system.
+
+Return ONLY a valid JSON object — absolutely no markdown fences, no backticks, no explanatory text before or after, just the raw JSON starting with { and ending with }:
+
 {
-  "title": "University Management System – Database Design Report",
+  "title": "<System Name from scenario> – Database Design Report",
   "subtitle": "A Comprehensive Database Design Document",
   "businessScenario": {
-    "overview": "2-3 sentence overview of the university system",
-    "goals": ["goal 1", "goal 2", "goal 3", "goal 4"],
-    "businessRules": ["rule 1", "rule 2", "rule 3", "rule 4", "rule 5"]
+    "overview": "2–3 sentence overview derived directly from the scenario provided",
+    "goals": ["goal 1 relevant to scenario", "goal 2", "goal 3", "goal 4"],
+    "businessRules": ["rule 1 relevant to scenario domain", "rule 2", "rule 3", "rule 4", "rule 5"]
   },
   "entities": [
-    { "name": "Department", "primaryKey": "DeptID", "description": "Stores academic department info", "keyAttributes": ["DeptID", "DeptName", "Location", "HOD"] },
-    { "name": "Teacher", "primaryKey": "TeacherID", "description": "Faculty member records", "keyAttributes": ["TeacherID", "FullName", "Email", "DeptID"] },
-    { "name": "Student", "primaryKey": "StudentID", "description": "Registered student data", "keyAttributes": ["StudentID", "FullName", "RollNo", "DeptID"] },
-    { "name": "Course", "primaryKey": "CourseID", "description": "Academic course definitions", "keyAttributes": ["CourseID", "CourseName", "CreditHours", "DeptID"] },
-    { "name": "Section", "primaryKey": "SectionID", "description": "Course section instances per semester", "keyAttributes": ["SectionID", "SectionName", "Semester", "CourseID", "TeacherID"] },
-    { "name": "Enrollment", "primaryKey": "EnrollmentID", "description": "Student-section registrations", "keyAttributes": ["EnrollmentID", "StudentID", "SectionID", "EnrollDate"] },
-    { "name": "Attendance", "primaryKey": "AttendanceID", "description": "Per-class attendance records", "keyAttributes": ["AttendanceID", "EnrollmentID", "Date", "Status"] }
+    {
+      "name": "EntityName (from scenario domain)",
+      "primaryKey": "EntityID",
+      "description": "What this entity represents in the context of the scenario",
+      "keyAttributes": ["EntityID", "Attribute2", "Attribute3", "Attribute4"]
+    }
   ],
   "normalization": {
-    "1NF": "Explanation of first normal form compliance",
-    "2NF": "Explanation of second normal form compliance",
-    "3NF": "Explanation of third normal form compliance"
+    "1NF": "Explanation of first normal form compliance specific to this system",
+    "2NF": "Explanation of second normal form compliance specific to this system",
+    "3NF": "Explanation of third normal form compliance specific to this system"
   },
   "relationships": [
-    { "from": "Department", "to": "Teacher", "type": "One-to-Many", "description": "A department employs many teachers" },
-    { "from": "Department", "to": "Student", "type": "One-to-Many", "description": "A department has many students" },
-    { "from": "Department", "to": "Course", "type": "One-to-Many", "description": "A department offers many courses" },
-    { "from": "Course", "to": "Section", "type": "One-to-Many", "description": "A course has multiple sections per semester" },
-    { "from": "Teacher", "to": "Section", "type": "One-to-Many", "description": "A teacher instructs multiple sections" },
-    { "from": "Student", "to": "Enrollment", "type": "One-to-Many", "description": "A student has many enrollment records" },
-    { "from": "Section", "to": "Enrollment", "type": "One-to-Many", "description": "A section contains many enrolled students" },
-    { "from": "Enrollment", "to": "Attendance", "type": "One-to-Many", "description": "Each enrollment tracks many attendance entries" }
+    {
+      "from": "EntityA",
+      "to": "EntityB",
+      "type": "One-to-Many",
+      "description": "Relationship description relevant to the scenario"
+    }
   ]
 }
 
-Fill in proper, detailed content for each field based on the scenario. Keep descriptions professional and academic. Return ONLY the JSON.`;
+IMPORTANT RULES FOR THE JSON:
+- Use only straight double quotes " for all strings — no smart/curly quotes
+- No trailing commas after the last item in any array or object
+- No comments inside the JSON
+- Escape any double quotes inside string values as \\"
+- All string values must be on a single line (no newlines inside strings)
+- Return ONLY the JSON object, nothing else
+
+CRITICAL ALIGNMENT INSTRUCTION:
+You MUST ensure the entities, attributes, primary keys, and relationships in your JSON EXACTLY MATCH the following Mermaid ERD design generated in the previous step:
+
+\`\`\`mermaid
+${cachedMermaid}
+\`\`\`
+`;
 
   const raw = await generateText(userId, prompt);
 
-  let jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  // ── Robust JSON extraction ──────────────────────────────────────────────────
+  // Strip markdown fences if present
+  let jsonStr = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  // Find the outermost { ... } block
   const start = jsonStr.indexOf('{');
   const end = jsonStr.lastIndexOf('}');
-  if (start !== -1 && end !== -1) jsonStr = jsonStr.slice(start, end + 1);
+  if (start === -1 || end === -1) {
+    throw new Error('Gemini response did not contain a JSON object.');
+  }
+  jsonStr = jsonStr.slice(start, end + 1);
+
+  // Fix common LLM JSON mistakes before parsing
+  jsonStr = fixCommonJsonIssues(jsonStr);
 
   let reportData;
   try {
     reportData = JSON.parse(jsonStr);
   } catch (e) {
-    throw new Error(`Failed to parse Gemini report JSON: ${e.message}`);
+    // Last-resort: sanitize encoding issues and retry
+    try {
+      const sanitized = jsonStr
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2013\u2014]/g, '-');
+      reportData = JSON.parse(sanitized);
+    } catch (e2) {
+      throw new Error(
+        `Failed to parse Gemini report JSON after sanitization: ${e2.message}\n\n` +
+        `Raw response (first 500 chars):\n${raw.slice(0, 500)}`
+      );
+    }
   }
 
   saveFile(userId, job.id, 'report.json', JSON.stringify(reportData, null, 2));
   job.addStep('✅ Report content generated and saved.');
   return reportData;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JSON sanitizer — fixes common mistakes LLMs make in JSON output
+// ─────────────────────────────────────────────────────────────────────────────
+function fixCommonJsonIssues(str) {
+  // Remove trailing commas before } or ]
+  str = str.replace(/,\s*([\}\]])/g, '$1');
+
+  // Replace smart/curly quotes with straight quotes
+  str = str.replace(/[\u2018\u2019]/g, "'");
+  str = str.replace(/[\u201C\u201D]/g, '"');
+
+  // Replace em/en dashes with hyphens
+  str = str.replace(/[\u2013\u2014]/g, '-');
+
+  // Remove stray control characters (except normal whitespace \t \n \r)
+  // eslint-disable-next-line no-control-regex
+  str = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  return str;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -497,7 +548,12 @@ export async function convertLatexToDocx(job, reportData) {
         ...e.keyAttributes.map((attr, i) => new TableRow({
           children: [
             makeTableCell(attr, 4680, i % 2 !== 0),
-            makeTableCell(attr.endsWith('ID') && attr !== e.primaryKey ? 'Foreign Key (FK)' : attr === e.primaryKey ? 'Primary Key (PK)' : 'Attribute', 4680, i % 2 !== 0),
+            makeTableCell(
+              attr === e.primaryKey ? 'Primary Key (PK)'
+                : attr.endsWith('ID') && attr !== e.primaryKey ? 'Foreign Key (FK)'
+                  : 'Attribute',
+              4680, i % 2 !== 0
+            ),
           ],
         })),
       ],
@@ -568,7 +624,7 @@ export async function convertLatexToDocx(job, reportData) {
         ...reportData.businessScenario.businessRules.map(r => makeBullet(r)),
 
         makeHeading('2. System Entities', HeadingLevel.HEADING_1),
-        makePara('The system architecture revolves around seven core entities, each capturing an essential dimension of university operations:'),
+        makePara('The system architecture revolves around the core entities identified from the scenario, each capturing an essential dimension of the system:'),
         new Paragraph({ spacing: { before: 120, after: 120 }, children: [] }),
         entityTable,
         new Paragraph({ spacing: { before: 200, after: 100 }, children: [] }),
@@ -585,7 +641,7 @@ export async function convertLatexToDocx(job, reportData) {
         makePara(reportData.normalization['3NF']),
 
         makeHeading('5. Entity Relationships', HeadingLevel.HEADING_1),
-        makePara('The following table summarises all relationships between entities in the University Management System:'),
+        makePara('The following table summarises all relationships between entities in the system:'),
         new Paragraph({ spacing: { before: 120, after: 120 }, children: [] }),
         relTable,
       ],
@@ -605,32 +661,172 @@ export async function generatePythonCode(job) {
   const { scenario, userId } = job.payload;
   job.addStep('🐍 Generating Python script to create the MS Access database...');
 
-  const prompt = `You are an expert Python developer. Write a complete, working Python script to create a Microsoft Access .accdb database for a University Management System.
+  // Get the cached Mermaid code to enforce table consistency
+  const cachedMermaid = userMermaidCache[userId] || '';
 
-STRICT REQUIREMENTS — the script must run without errors:
-1. Import pyodbc and use the "Microsoft Access Driver (*.mdb, *.accdb)" connection string
-2. Create the database file named "StudentAttendanceSystem.accdb" in the same folder as the script
-3. Create these 7 tables in this ORDER (respect FK dependencies):
-   - Department (DeptID AUTOINCREMENT PK, DeptName TEXT(100) NOT NULL, Location TEXT(100), EstablishedYear INTEGER)
-   - Teacher (TeacherID AUTOINCREMENT PK, FullName TEXT(100) NOT NULL, Email TEXT(100), Phone TEXT(20), DeptID INTEGER NOT NULL)
-   - Student (StudentID AUTOINCREMENT PK, FullName TEXT(100) NOT NULL, RollNo TEXT(20) UNIQUE, Email TEXT(100), DeptID INTEGER NOT NULL)
-   - Course (CourseID AUTOINCREMENT PK, CourseName TEXT(100) NOT NULL, CourseCode TEXT(20), CreditHours INTEGER, DeptID INTEGER NOT NULL)
-   - Section (SectionID AUTOINCREMENT PK, SectionName TEXT(10) NOT NULL, Semester TEXT(20), AcademicYear TEXT(10), CourseID INTEGER NOT NULL, TeacherID INTEGER NOT NULL)
-   - Enrollment (EnrollmentID AUTOINCREMENT PK, StudentID INTEGER NOT NULL, SectionID INTEGER NOT NULL, EnrollDate DATETIME, Grade TEXT(5))
-   - Attendance (AttendanceID AUTOINCREMENT PK, EnrollmentID INTEGER NOT NULL, AttendanceDate DATETIME NOT NULL, Status TEXT(10) NOT NULL)
-4. Insert exactly 5 sample rows per table using realistic Pakistani university data (names, cities, etc.)
-5. Use separate INSERT statements — no bulk insert
-6. Print a success message after each table is created and populated
-7. Wrap everything in try/except and close the connection in a finally block
-8. Use os.path.dirname(os.path.abspath(__file__)) to get the script directory for the .accdb path
-9. The connection string template: r"Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=<path>;"
-10. MS Access does not support CREATE TABLE with FK REFERENCES syntax — do NOT add REFERENCES or FOREIGN KEY clauses to CREATE TABLE statements. FK relationships are implied by the column names only.
-11. MS Access uses AUTOINCREMENT not AUTO_INCREMENT
+  const prompt = `You are an expert Python developer specializing in Microsoft Access database automation with pyodbc and win32com.
 
-Output ONLY the Python code — no markdown fences, no explanations, no comments outside the code.`;
+The user has provided this specific scenario:
+"${scenario}"
 
-  const code = await generateText(userId, prompt);
-  const clean = code.replace(/```python\n?/g, '').replace(/```\n?/g, '').trim();
+CRITICAL INSTRUCTION:
+Analyze the scenario carefully and derive the correct domain, entities, table names, and attributes FROM THE SCENARIO itself.
+Do NOT default to a university/student system unless the scenario explicitly describes one.
+
+You MUST generate Python code in the SAME STYLE and STRUCTURE as the provided reference example below.
+
+VERY IMPORTANT:
+The generated Python code must be extremely stable, practical, and avoid common MS Access errors.
+Use the reference implementation pattern exactly.
+
+STRICT IMPLEMENTATION RULES:
+
+1. ALWAYS import:
+   - pyodbc
+   - os
+   - win32com.client
+
+2. ALWAYS create the .accdb file FIRST using:
+   win32com.client.Dispatch("ADOX.Catalog")
+
+3. ALWAYS use this exact database creation pattern:
+
+   if os.path.exists(path):
+       os.remove(path)
+
+   catalog = win32com.client.Dispatch("ADOX.Catalog")
+   catalog.Create(
+       f"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={path};"
+   )
+
+4. ALWAYS build DB path using:
+   os.path.dirname(os.path.abspath(__file__))
+
+5. ALWAYS use this connection string style:
+
+   CONN_STR = (
+       r"Driver={Microsoft Access Driver (*.mdb, *.accdb)};"
+       f"DBQ={DB_PATH};"
+   )
+
+6. ALWAYS connect using:
+   pyodbc.connect(CONN_STR, autocommit=True)
+
+7. CREATE TABLE RULES:
+   - Create 6–9 tables
+   - Create parent tables before child tables
+   - Use AUTOINCREMENT PRIMARY KEY
+   - Use ONLY valid MS Access types:
+       TEXT(n)
+       INTEGER
+       FLOAT
+       YESNO
+       DATE
+       DATETIME
+   - NEVER use:
+       VARCHAR
+       BOOLEAN
+       SERIAL
+       AUTO_INCREMENT
+       FOREIGN KEY inside CREATE TABLE
+       REFERENCES inside CREATE TABLE
+
+8. FOREIGN KEY RULE:
+   AFTER all tables are created, apply relationships separately using:
+   ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...
+
+9. SAMPLE DATA RULES:
+   - Insert EXACTLY 5 rows per table
+   - Use realistic data matching the scenario
+   - If scenario is Pakistani, use Pakistani names/context
+   - Use individual INSERT statements or parameterized inserts
+   - NEVER use bulk insert syntax
+
+10. ERROR PREVENTION RULES:
+   - Wrap EVERYTHING in:
+       try:
+       except Exception as e:
+       finally:
+   - ALWAYS close cursor and connection safely
+   - Print detailed error messages
+   - Print success message after:
+       - database creation
+       - each table creation
+       - foreign key creation
+       - sample data insertion
+
+11. IMPORTANT ACCESS COMPATIBILITY RULES:
+   - DO NOT use SQL features unsupported by MS Access
+   - DO NOT use CASCADE
+   - DO NOT use CHECK constraints
+   - DO NOT use ENGINE syntax
+   - DO NOT use MySQL/PostgreSQL syntax
+   - Avoid reserved keywords as column names
+   - Use simple table/column names without spaces
+
+12. OUTPUT STRUCTURE:
+   The code structure should closely follow this order:
+
+   - imports
+   - DB path
+   - create_blank_accdb()
+   - connection setup
+   - DDL list
+   - create tables loop
+   - FK list
+   - apply FK loop
+   - sample data inserts
+   - success messages
+   - cleanup in finally block
+
+13. DATABASE FILE NAME:
+   Name the .accdb file according to the scenario domain.
+   Examples:
+   - HospitalManagementSystem.accdb
+   - LibraryManagementSystem.accdb
+   - InventoryManagementSystem.accdb
+
+14. OUTPUT FORMAT:
+   Output ONLY raw Python code.
+   DO NOT include:
+   - markdown
+   - backticks
+   - explanations
+   - comments outside the code
+
+REFERENCE STYLE REQUIREMENT:
+The generated script must closely resemble a production-ready version of the reference implementation provided by the user, including:
+- stable connection handling
+- ADOX database creation
+- separated FK creation
+- autocommit=True
+- structured DDL arrays
+- parameterized inserts
+- proper cleanup
+- clear print messages
+
+The final script must run successfully on Windows with:
+- Python
+- pyodbc
+- pywin32
+- Microsoft Access Database Engine installed.
+
+CRITICAL ALIGNMENT INSTRUCTION:
+You MUST ensure the tables, columns, primary keys, and foreign keys in your Python script EXACTLY MATCH the following Mermaid ERD design generated in previous steps:
+
+\`\`\`mermaid
+${cachedMermaid}
+\`\`\`
+`;
+  const raw = await generateText(userId, prompt);
+
+  // Strip any markdown code fences the model might add despite instructions
+  const clean = raw
+    .replace(/^```python\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
   saveFile(userId, job.id, 'create_database.py', clean);
   job.addStep('✅ Python database creation script generated and saved.');
   return clean;
@@ -664,7 +860,7 @@ export async function runPythonScript(job) {
    \`\`\`
    python create_database.py
    \`\`\`
-4. \`StudentAttendanceSystem.accdb\` will be created in the same folder
+4. The \`.accdb\` file will be created in the same folder
 
 ## Troubleshooting
 - If you get "Data source name not found", install the [Microsoft Access Database Engine](https://www.microsoft.com/en-us/download/details.aspx?id=54920)
@@ -680,5 +876,14 @@ export async function runPythonScript(job) {
     return { stdout, accdbPath: path.join(jobDir, 'StudentAttendanceSystem.accdb') };
   } catch (err) {
     throw new Error(`Python execution failed: ${err.message}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLEANUP UTILITY
+// ─────────────────────────────────────────────────────────────────────────────
+export function cleanupJobCache(userId) {
+  if (userMermaidCache[userId]) {
+    delete userMermaidCache[userId];
   }
 }

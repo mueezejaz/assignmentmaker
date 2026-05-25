@@ -16,12 +16,14 @@ export default function NewJobForm({ onJobCreated }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    const text = scenario.trim() || DEFAULT_SCENARIO;
+    // FIX: Use the actual scenario value; only fall back to default if truly empty
+    const trimmed = scenario.trim();
+    const text = trimmed.length > 0 ? trimmed : DEFAULT_SCENARIO;
     setLoading(true);
     setError('');
     try {
       const data = await createJob(text);
-      onJobCreated?.(data);
+      onJobCreated?.({ ...data, scenario: text });
       setScenario('');
     } catch (err) {
       setError(err?.response?.data?.error || err.message || 'Failed to create job');
@@ -54,9 +56,16 @@ export default function NewJobForm({ onJobCreated }) {
             rows={5}
             style={{ minHeight: 100 }}
           />
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-            Leave blank to use the default University Management System scenario.
-          </p>
+          {scenario.trim().length > 0 && (
+            <p style={{ fontSize: 12, color: '#5dba8a', marginTop: 6 }}>
+              ✓ Using your custom scenario ({scenario.trim().length} chars)
+            </p>
+          )}
+          {scenario.trim().length === 0 && (
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+              Leave blank to use the default University Management System scenario.
+            </p>
+          )}
         </div>
 
         {error && (

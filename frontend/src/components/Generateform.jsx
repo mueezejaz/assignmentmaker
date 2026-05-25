@@ -52,7 +52,7 @@ export default function GenerateForm({ onJobCreated }) {
                         </div>
                     )}
                     <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                        {loading ? <><span className="spinner" /> Creating Job...</> : '⚡ Generate Full Assignment'}
+                        {loading ? <><span className="spinner" /> Creating Job...</> : 'Generate Full Assignment'}
                     </button>
                 </div>
             </form>

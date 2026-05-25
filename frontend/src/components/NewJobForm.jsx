@@ -81,7 +81,7 @@ export default function NewJobForm({ onJobCreated }) {
           </div>
         )}
 
-        <button
+        {/* <button
           type="submit"
           className="btn btn-primary"
           disabled={loading}
@@ -92,7 +92,7 @@ export default function NewJobForm({ onJobCreated }) {
           ) : (
             "Generate Full Assignment"
           )}
-        </button>
+        </button> */}
       </form>
 
       {/* What gets generated */}

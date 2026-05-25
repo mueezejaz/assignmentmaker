@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { queue } from '../queue/Queue.js';
+import { enqueueJob, getJob, serializeJob, getQueueEvents } from '../queue/Queue.js';
 import {
-  saveUserMeta, loadUserMeta, listUserJobs, getFilePath, getUserDir
+  saveUserMeta, loadUserMeta, getFilePath,
 } from '../storage/storage.js';
 import { validateApiKey, initGemini, hasClient } from '../services/gemini.js';
 import fs from 'fs';
@@ -11,7 +11,6 @@ const router = Router();
 
 // ─── Clerk user ID from header ─────────────────────────────────────────────
 function getUserId(req) {
-  // In production with Clerk, verify JWT. For now extract from header.
   return req.headers['x-user-id'] || req.body?.userId || 'anonymous';
 }
 
@@ -26,7 +25,6 @@ router.post('/api-key', async (req, res) => {
     return res.status(400).json({ error: `Invalid API key: ${validation.error}` });
   }
 
-  // Store encrypted (simple base64 for demo - use proper encryption in prod)
   const encoded = Buffer.from(apiKey).toString('base64');
   saveUserMeta(userId, { apiKeyEncoded: encoded, apiKeySet: true, apiKeySetAt: Date.now() });
   initGemini(userId, apiKey);
@@ -38,7 +36,6 @@ router.get('/api-key/status', (req, res) => {
   const userId = getUserId(req);
   const meta = loadUserMeta(userId);
 
-  // Re-init Gemini if key exists in storage but not in memory
   if (meta.apiKeyEncoded && !hasClient(userId)) {
     const apiKey = Buffer.from(meta.apiKeyEncoded, 'base64').toString();
     initGemini(userId, apiKey);
@@ -58,10 +55,9 @@ router.delete('/api-key', (req, res) => {
 });
 
 // ─── Job Management ─────────────────────────────────────────────────────────
-router.post('/jobs', (req, res) => {
+router.post('/jobs', async (req, res) => {
   const userId = getUserId(req);
   const { scenario } = req.body;
-  console.log("tis is ", scenario)
 
   if (!scenario) return res.status(400).json({ error: 'Scenario description required' });
 
@@ -74,33 +70,93 @@ router.post('/jobs', (req, res) => {
     return res.status(403).json({ error: 'Please set your Gemini API key first.' });
   }
 
-  const job = queue.enqueue('generate-assignment', { userId, scenario }, userId);
-  res.json({ jobId: job.id, status: job.status });
+  try {
+    const job = await enqueueJob('generate-assignment', { userId, scenario }, userId);
+    res.json({ jobId: job.id, status: 'queued' });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to enqueue job: ${err.message}` });
+  }
 });
 
-router.get('/jobs', (req, res) => {
+router.get('/jobs', async (req, res) => {
+  // BullMQ doesn't natively filter jobs by userId across all states efficiently.
+  // We fall back to reading job.json files written to disk by the worker.
   const userId = getUserId(req);
-  const jobs = queue.getJobsForUser(userId);
+  const userDir = path.join('data', userId.replace(/[^a-zA-Z0-9_\-]/g, '_'));
+
+  if (!fs.existsSync(userDir)) return res.json({ jobs: [] });
+
+  const entries = fs.readdirSync(userDir, { withFileTypes: true });
+  const jobs = entries
+    .filter(e => e.isDirectory())
+    .map(e => {
+      const metaPath = path.join(userDir, e.name, 'job.json');
+      if (fs.existsSync(metaPath)) {
+        return JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      }
+      return { id: e.name, status: 'unknown' };
+    })
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
   res.json({ jobs });
 });
 
-router.get('/jobs/:id', (req, res) => {
-  const job = queue.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json(job.toJSON());
+router.get('/jobs/:id', async (req, res) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(await serializeJob(job));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Long Polling ──────────────────────────────────────────────────────────
+// BullMQ QueueEvents lets us efficiently wait for job updates via Redis pub/sub.
 router.get('/jobs/:id/poll', async (req, res) => {
   const jobId = req.params.id;
   const sinceTs = parseInt(req.query.since || '0', 10);
+  const TIMEOUT_MS = 25000;
 
-  const job = queue.getJob(jobId);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
+  try {
+    const job = await getJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
 
-  // Wait for update (long poll, 25s timeout)
-  const snapshot = await queue.waitForUpdate(jobId, sinceTs, 25000);
-  res.json(snapshot || job.toJSON());
+    const snapshot = await serializeJob(job);
+
+    // If already updated since the client's last-seen timestamp, return immediately
+    if (snapshot.updatedAt > sinceTs || snapshot.status === 'done' || snapshot.status === 'failed') {
+      return res.json(snapshot);
+    }
+
+    // Otherwise wait for the next progress/completed/failed event
+    const queueEvents = getQueueEvents();
+
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        queueEvents.off('progress', onProgress);
+        queueEvents.off('completed', onDone);
+        queueEvents.off('failed', onDone);
+        resolve();
+      };
+
+      const onProgress = ({ jobId: id }) => { if (id === jobId) cleanup(); };
+      const onDone = ({ jobId: id }) => { if (id === jobId) cleanup(); };
+
+      queueEvents.on('progress', onProgress);
+      queueEvents.on('completed', onDone);
+      queueEvents.on('failed', onDone);
+    });
+
+    const updated = await getJob(jobId);
+    res.json(await serializeJob(updated));
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── File Download ─────────────────────────────────────────────────────────
@@ -108,7 +164,6 @@ router.get('/jobs/:id/files/:filename', (req, res) => {
   const userId = getUserId(req);
   const { id, filename } = req.params;
 
-  // Security: only allow safe filenames
   const safe = filename.replace(/[^a-zA-Z0-9._\-]/g, '');
   const filePath = getFilePath(userId, id, safe);
 

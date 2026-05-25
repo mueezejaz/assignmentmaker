@@ -13,17 +13,17 @@ import {
 const execAsync = promisify(exec);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GLOBAL CACHE: Store Mermaid code by userId
+// GLOBAL CACHE: Store DOT code by userId
 // ─────────────────────────────────────────────────────────────────────────────
 export const userMermaidCache = {};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 1: Generate Mermaid ERD
+// STEP 1: Generate Graphviz DOT ERD
 // ─────────────────────────────────────────────────────────────────────────────
 export async function generateMermaidERD(job) {
   const { scenario, userId } = job.payload;
-  console.log("this is scenario", scenario)
-  job.addStep('🤖 Asking Gemini to design the ERD in Mermaid notation...');
+  console.log("this is scenario", scenario);
+  job.addStep('🤖 Asking Gemini to design the ERD in Graphviz DOT notation...');
 
   const prompt = `You are a senior database architect and ERD specialist.
 
@@ -37,170 +37,352 @@ Analyze the scenario and identify:
 2. The attributes each entity should have based on the scenario
 3. The relationships between those entities
 
-Then generate a PROFESSIONAL and SYNTACTICALLY CORRECT Mermaid ER diagram for this system.
+Then generate a PROFESSIONAL and SYNTACTICALLY CORRECT Graphviz DOT ER diagram for this system.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL MERMAID SYNTAX RULES — FOLLOW EXACTLY OR THE DIAGRAM WILL FAIL
+CRITICAL GRAPHVIZ DOT SYNTAX RULES — FOLLOW EXACTLY OR THE DIAGRAM WILL FAIL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 RULE 1 — First line MUST be exactly:
-erDiagram
+digraph ERD {
 
-RULE 2 — Derive 6–9 entity names from the scenario. Use PascalCase, no spaces.
+RULE 2 — Global graph settings MUST come immediately after the opening brace:
+    graph [rankdir=LR, fontname="Helvetica", fontsize=12, bgcolor="white", pad="0.5", nodesep=0.8, ranksep=1.2];
+    node [shape=none, fontname="Helvetica", fontsize=11, margin=0];
+    edge [fontname="Helvetica", fontsize=10, color="#333333", arrowsize=0.8];
+
+RULE 3 — Derive 6–9 entity names from the scenario. Use PascalCase, no spaces.
   Examples for a hospital: Patient, Doctor, Ward, Appointment, Prescription, Department
   Examples for a library: Member, Book, Author, Loan, Category, Branch
   The entities MUST reflect the actual domain of the scenario provided.
 
-RULE 3 — Each entity block MUST follow this exact format with NO deviations:
-  EntityName {
-      dataType attributeName
-      dataType attributeName PK
-      dataType attributeName FK
-  }
+RULE 4 — Each entity MUST be defined as an HTML-like label table node:
+  EntityName [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="white">
+      <TR><TD BGCOLOR="#222222" ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="12"><B>EntityName</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>int</I></FONT> <B>EntityID</B> <FONT COLOR="#888888" POINT-SIZE="9">«PK»</FONT></TD></TR>
+      <TR><TD BGCOLOR="#F5F5F5" ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>string</I></FONT> AttributeName</TD></TR>
+      <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>int</I></FONT> ForeignKeyID <FONT COLOR="#888888" POINT-SIZE="9">«FK»</FONT></TD></TR>
+    </TABLE>
+  >];
 
-  - Opening brace { must be on the SAME LINE as the entity name
-  - Each attribute on its own indented line
-  - Closing brace } on its own line
-  - NO quotes around entity names
-  - NO spaces inside attribute names (e.g. use PatientID not Patient ID)
+  RULES for entity tables:
+  - Header row: dark background (#222222), white bold text, centered
+  - PK row: white background, bold attribute name, «PK» tag in gray
+  - Normal rows: alternate between white and #F5F5F5 backgrounds
+  - FK rows: include «FK» tag in gray
+  - Each attribute on its own TR/TD row
+  - Allowed data types: int, string, date, boolean, float (shown in italic)
+  - 3–6 meaningful attributes per entity plus the PK
 
-RULE 4 — Allowed data types ONLY (use exactly as written):
-  int
-  string
-  date
-  boolean
-  float
+RULE 5 — Relationship edges MUST use this exact format:
+  EntityA -> EntityB [label="verb", arrowhead=crow, arrowtail=tee, dir=both];
 
-RULE 5 — Relationship lines MUST use these exact connectors:
-  ||--||    (one and only one — to — one and only one)
-  ||--|{    (one and only one — to — one or more)
-  }|--|{    (one or more — to — one or more)
-  ||--o{    (one and only one — to — zero or more)
-  }o--||    (zero or more — to — one and only one)
+  Allowed arrowhead/arrowtail values (ERD crow's foot notation):
+  - One-to-Many:    arrowhead=crow, arrowtail=tee, dir=both
+  - Many-to-One:    arrowhead=tee, arrowtail=crow, dir=both
+  - One-to-One:     arrowhead=tee, arrowtail=tee, dir=both
+  - Many-to-Many:   arrowhead=crow, arrowtail=crow, dir=both
+  - Zero-or-Many:   arrowhead=crow, arrowtail=odot, dir=both
 
-RULE 6 — Relationship statement format MUST be exactly:
-  EntityA CONNECTOR EntityB : "label"
+RULE 6 — Closing brace MUST be on its own line:
+}
 
-  - Label MUST be in double quotes
-  - Use short, clear verbs relevant to the scenario domain
-  - One relationship statement per line
-
-RULE 7 — STRICT PROHIBITIONS (any of these will break the diagram):
-  - NO %% comments of any kind
-  - NO classDef, style, or CSS blocks
-  - NO %%{init: ...}%% blocks
-  - NO theme or color configuration
-  - NO multi-word attribute names with spaces
-  - NO special characters in attribute names (only alphanumeric)
+RULE 7 — STRICT PROHIBITIONS:
+  - NO comments of any kind (// or /* */)
+  - NO subgraph clusters unless grouping makes sense
+  - NO special characters in node names (only alphanumeric, no spaces)
   - NO markdown text, explanations, or notes outside the code block
-  - NO trailing whitespace on relationship lines
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ATTRIBUTE GUIDELINES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-For each entity derived from the scenario:
-- Include a primary key (ID field) marked PK
-- Include 3–6 meaningful attributes that reflect the real domain
-- Include foreign key fields (marked FK) where relationships exist
-- Attribute names must be camelCase or PascalCase, no spaces
+  - Node names used in edges MUST exactly match the names used in node definitions
+  - NO mixing of HTML labels and plain string labels
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXACT FORMAT EXAMPLE (for a HOSPITAL scenario — adapt yours to YOUR scenario domain)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-erDiagram
-    Department {
-        int DeptID PK
-        string DeptName
-        string Location
-        int EstablishedYear
-    }
+digraph ERD {
+    graph [rankdir=LR, fontname="Helvetica", fontsize=12, bgcolor="white", pad="0.5", nodesep=0.8, ranksep=1.2];
+    node [shape=none, fontname="Helvetica", fontsize=11, margin=0];
+    edge [fontname="Helvetica", fontsize=10, color="#333333", arrowsize=0.8];
 
-    Doctor {
-        int DoctorID PK
-        string FullName
-        string Specialization
-        string Email
-        int DeptID FK
-    }
+    Department [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="white">
+            <TR><TD BGCOLOR="#222222" ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="12"><B>Department</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>int</I></FONT> <B>DeptID</B> <FONT COLOR="#888888" POINT-SIZE="9">«PK»</FONT></TD></TR>
+            <TR><TD BGCOLOR="#F5F5F5" ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>string</I></FONT> DeptName</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>string</I></FONT> Location</TD></TR>
+        </TABLE>
+    >];
 
-    Department ||--|{ Doctor : "employs"
+    Doctor [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="white">
+            <TR><TD BGCOLOR="#222222" ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="12"><B>Doctor</B></FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>int</I></FONT> <B>DoctorID</B> <FONT COLOR="#888888" POINT-SIZE="9">«PK»</FONT></TD></TR>
+            <TR><TD BGCOLOR="#F5F5F5" ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>string</I></FONT> FullName</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>string</I></FONT> Specialization</TD></TR>
+            <TR><TD BGCOLOR="#F5F5F5" ALIGN="LEFT"><FONT COLOR="#444444" POINT-SIZE="10"><I>int</I></FONT> DeptID <FONT COLOR="#888888" POINT-SIZE="9">«FK»</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    Department -> Doctor [label="employs", arrowhead=crow, arrowtail=tee, dir=both];
+}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Output ONLY the Mermaid code block. Start with:
-\`\`\`mermaid
+Output ONLY the Graphviz DOT code block. Start with:
+\`\`\`dot
 
 End with:
 \`\`\`
 `;
 
   const raw = await generateText(userId, prompt);
-  const mermaidMatch = raw.match(/```mermaid\n([\s\S]+?)```/);
-  if (!mermaidMatch) throw new Error('Gemini did not return a valid Mermaid code block.');
+  const dotMatch = raw.match(/```dot\n([\s\S]+?)```/);
+  if (!dotMatch) throw new Error('Gemini did not return a valid DOT code block.');
 
-  const mermaidCode = mermaidMatch[1].trim();
+  const dotCode = dotMatch[1].trim();
 
-  // Store the Mermaid code in the global object
-  userMermaidCache[userId] = mermaidCode;
+  // Store the DOT code in the global cache (key reused for compatibility)
+  userMermaidCache[userId] = dotCode;
 
-  saveFile(userId, job.id, 'erd.mmd', mermaidCode);
-  job.addStep('✅ ERD Mermaid code generated and saved.');
-  return mermaidCode;
+  saveFile(userId, job.id, 'erd.dot', dotCode);
+  job.addStep('✅ ERD Graphviz DOT code generated and saved.');
+  return dotCode;
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 2: Convert Mermaid → SVG (white background, black diagram, no color)
+// CHEN NOTATION GENERATOR
+// Parses the crow's foot DOT code and regenerates a Chen-style ERD
+// (rectangles = entities, ovals = attributes, diamonds = relationships)
 // ─────────────────────────────────────────────────────────────────────────────
-export async function convertMermaidToPNG(job, mermaidCode) {
-  job.addStep('🖼️ Rendering ERD diagram to SVG...');
-  const jobDir = getJobDir(job.payload.userId, job.id);
-  const svgPath = path.join(jobDir, 'erd.svg');
-
-  const svgContent = generateFallbackSVG(mermaidCode);
-  fs.writeFileSync(svgPath, svgContent);
-  job.addStep('✅ ERD SVG rendered successfully (white background, black diagram).');
-  return svgPath;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SVG Generator — white background, black text and borders, no color scheme
-// Parses the Mermaid ERD code and renders a clean ER diagram as SVG
-// ─────────────────────────────────────────────────────────────────────────────
-function generateFallbackSVG(mermaidCode) {
-  const lines = mermaidCode.split('\n').map(l => l.trim()).filter(l => l && l !== 'erDiagram');
-
-  // ── Parse entities ──────────────────────────────────────────────────────────
+function generateChenNotationDOT(crowsfootDot) {
+  // ── 1. Parse entity names & attributes from HTML label blocks ─────────────
   const entities = [];
-  let current = null;
+  const nodeBlockRegex = /(\w+)\s*\[label=<([\s\S]*?)>\s*\]/g;
+  let nb;
+  while ((nb = nodeBlockRegex.exec(crowsfootDot)) !== null) {
+    const entityName = nb[1];
+    if (['graph', 'node', 'edge'].includes(entityName)) continue;
 
-  for (const line of lines) {
-    const entityMatch = line.match(/^(\w+)\s*\{/);
-    const attrMatch = line.match(/^(int|string|date|boolean|float)\s+(\w+)(\s+(PK|FK))?/i);
-    const closeMatch = line === '}';
+    const tableContent = nb[2];
+    const attrs = [];
+    let isPK = false;
 
-    if (entityMatch && !line.includes(':')) {
-      current = { name: entityMatch[1], attrs: [] };
-      entities.push(current);
-    } else if (attrMatch && current) {
-      const tag = attrMatch[4] ? attrMatch[4].toUpperCase() : '';
-      current.attrs.push({ type: attrMatch[1], name: attrMatch[2], tag });
-    } else if (closeMatch) {
-      current = null;
+    const trRegex = /<TR>([\s\S]*?)<\/TR>/gi;
+    let tr;
+    let rowIndex = 0;
+    while ((tr = trRegex.exec(tableContent)) !== null) {
+      if (rowIndex === 0) { rowIndex++; continue; } // skip header
+      // Extract bold text (attribute name)
+      const boldMatch = tr[1].match(/<B>([^<]+)<\/B>/);
+      const isPKRow = tr[1].includes('«PK»');
+      const isFKRow = tr[1].includes('«FK»');
+      if (boldMatch) {
+        attrs.push({
+          name: boldMatch[1].trim(),
+          isPK: isPKRow,
+          isFK: isFKRow,
+        });
+      } else {
+        // fallback: strip all tags
+        const text = tr[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (text) attrs.push({ name: text, isPK: isPKRow, isFK: isFKRow });
+      }
+      rowIndex++;
     }
+
+    entities.push({ name: entityName, attrs });
   }
 
-  // ── Parse relationships ─────────────────────────────────────────────────────
+  // ── 2. Parse relationships ─────────────────────────────────────────────────
   const relationships = [];
-  for (const line of lines) {
-    const m = line.match(/^(\w+)\s+(\S+)\s+(\w+)\s*:\s*"?([^"]+)"?$/);
-    if (m && !line.match(/^(int|string|date|boolean|float)/i) && !m[1].match(/^(int|string|date|boolean|float)$/i)) {
-      relationships.push({ from: m[1], connector: m[2], to: m[3], label: m[4].replace(/"/g, '') });
+  const edgeRegex = /(\w+)\s*->\s*(\w+)\s*\[label="([^"]+)"[^\]]*arrowhead=(\w+)[^\]]*arrowtail=(\w+)/g;
+  let er;
+  while ((er = edgeRegex.exec(crowsfootDot)) !== null) {
+    relationships.push({
+      from: er[1],
+      to: er[2],
+      label: er[3],
+      arrowhead: er[4],
+      arrowtail: er[5],
+    });
+  }
+
+  // ── 3. Map arrowhead combos → cardinality labels ───────────────────────────
+  function cardinalityLabel(arrowhead, arrowtail) {
+    if (arrowhead === 'crow' && arrowtail === 'tee') return { from: '1', to: 'M' };
+    if (arrowhead === 'tee' && arrowtail === 'crow') return { from: 'M', to: '1' };
+    if (arrowhead === 'crow' && arrowtail === 'crow') return { from: 'M', to: 'M' };
+    if (arrowhead === 'tee' && arrowtail === 'tee') return { from: '1', to: '1' };
+    if (arrowhead === 'crow' && arrowtail === 'odot') return { from: '0', to: 'M' };
+    return { from: '1', to: 'M' };
+  }
+
+  // ── 4. Color palette (matching Image 2 green theme) ───────────────────────
+  const ENTITY_COLOR = '#a8d08d'; // green rectangle
+  const ENTITY_BORDER = '#5a8a3c';
+  const ATTR_COLOR = '#c6e0b4'; // light green oval
+  const ATTR_BORDER = '#5a8a3c';
+  const REL_COLOR = '#e2efda';  // diamond
+  const REL_BORDER = '#5a8a3c';
+  const PK_COLOR = '#ffd966'; // yellow oval for PK
+  const PK_BORDER = '#b8860b';
+  const FK_COLOR = '#f4b942'; // orange oval for FK
+  const FK_BORDER = '#b8860b';
+
+  // ── 5. Build DOT lines ─────────────────────────────────────────────────────
+  const lines = [];
+  lines.push('graph ChenERD {');
+  lines.push('    graph [rankdir=LR, fontname="Helvetica", fontsize=11, bgcolor="white", pad="1.0", nodesep=1.2, ranksep=2.0, splines=true];');
+  lines.push('    node [fontname="Helvetica", fontsize=10];');
+  lines.push('    edge [fontname="Helvetica", fontsize=9, color="#555555"];');
+  lines.push('');
+
+  // Entity rectangles
+  entities.forEach(e => {
+    lines.push(`    ${e.name} [shape=rectangle, style="filled,bold", fillcolor="${ENTITY_COLOR}", color="${ENTITY_BORDER}", penwidth=2, label="${e.name}", fontsize=12, fontcolor="white", fontname="Helvetica-Bold", margin="0.2,0.1"];`);
+  });
+  lines.push('');
+
+  // Attribute ovals
+  entities.forEach(e => {
+    e.attrs.forEach((attr, i) => {
+      const safeId = `${e.name}_attr_${i}`;
+      let fillColor = ATTR_COLOR;
+      let borderColor = ATTR_BORDER;
+      let fontStyle = 'Helvetica';
+      let labelText = attr.name;
+
+      if (attr.isPK) {
+        fillColor = PK_COLOR;
+        borderColor = PK_BORDER;
+        fontStyle = 'Helvetica-Bold';
+        // Underline PK using HTML label
+        lines.push(`    ${safeId} [shape=ellipse, style="filled", fillcolor="${fillColor}", color="${borderColor}", penwidth=1.5, label=<\<U\>${labelText}\<\/U\>>, fontname="${fontStyle}"];`);
+        lines.push(`    ${e.name} -- ${safeId};`);
+        return;
+      }
+      if (attr.isFK) {
+        fillColor = FK_COLOR;
+        borderColor = FK_BORDER;
+        fontStyle = 'Helvetica-Oblique';
+      }
+      lines.push(`    ${safeId} [shape=ellipse, style="filled", fillcolor="${fillColor}", color="${borderColor}", penwidth=1.5, label="${labelText}", fontname="${fontStyle}"];`);
+      lines.push(`    ${e.name} -- ${safeId};`);
+    });
+    lines.push('');
+  });
+
+  // Relationship diamonds + edges
+  relationships.forEach((rel, i) => {
+    const diamondId = `rel_${i}_${rel.label.replace(/\s+/g, '_')}`;
+    const card = cardinalityLabel(rel.arrowhead, rel.arrowtail);
+
+    lines.push(`    ${diamondId} [shape=diamond, style="filled", fillcolor="${REL_COLOR}", color="${REL_BORDER}", penwidth=1.5, label="${rel.label}", fontname="Helvetica-Bold", fontsize=10, margin="0.1,0.05"];`);
+    lines.push(`    ${rel.from} -- ${diamondId} [label="${card.from}", fontsize=10, fontcolor="#333333", fontname="Helvetica-Bold"];`);
+    lines.push(`    ${diamondId} -- ${rel.to} [label="${card.to}", fontsize=10, fontcolor="#333333", fontname="Helvetica-Bold"];`);
+    lines.push('');
+  });
+
+  lines.push('}');
+  return lines.join('\n');
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2: Convert Graphviz DOT → PNG using the dot CLI
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2: Convert Graphviz DOT → PNG using the dot CLI (HIGH RESOLUTION)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function convertMermaidToPNG(job, dotCode) {
+  job.addStep('🖼️ Rendering Graphviz DOT ERD to PNG...');
+
+  const jobDir = getJobDir(job.payload.userId, job.id);
+
+  const dotPath = path.join(jobDir, 'erd.dot');
+  const pngPath = path.join(jobDir, 'erd.png');
+  const chenPngPath = path.join(jobDir, 'erd_chen.png');
+
+  // Save DOT source
+  fs.writeFileSync(dotPath, dotCode);
+
+  // Generate Chen notation DOT
+  const chenDotPath = path.join(jobDir, 'erd_chen.dot');
+  const chenDotCode = generateChenNotationDOT(dotCode);
+  fs.writeFileSync(chenDotPath, chenDotCode);
+
+  try {
+    // ── Render crow's foot ERD at high DPI ──────────────────────────────────
+    await execAsync(
+      `dot -Tpng -Gdpi=300 "${dotPath}" -o "${pngPath}"`,
+      { cwd: jobDir, timeout: 60000 }
+    );
+    job.addStep('✅ Crow\'s foot ERD rendered to PNG (300 DPI).');
+
+    // ── Render Chen notation ERD at high DPI ────────────────────────────────
+    await execAsync(
+      `dot -Tpng -Gdpi=300 "${chenDotPath}" -o "${chenPngPath}"`,
+      { cwd: jobDir, timeout: 60000 }
+    );
+    job.addStep('✅ Chen notation ERD rendered to PNG (300 DPI).');
+
+    return { crowsfoot: pngPath, chen: chenPngPath };
+  } catch (err) {
+    console.error(err);
+    job.addStep('⚠️ Graphviz dot failed. Falling back to SVG renderer.');
+
+    const svgPath = path.join(jobDir, 'erd.svg');
+    const fallbackSVG = generateFallbackSVG(dotCode);
+    fs.writeFileSync(svgPath, fallbackSVG);
+    return { crowsfoot: svgPath, chen: svgPath };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FALLBACK SVG: Parse the DOT code and render a basic ER diagram as SVG
+// Used only when the dot CLI is unavailable
+// ─────────────────────────────────────────────────────────────────────────────
+function generateFallbackSVG(dotCode) {
+  // ── Parse entity names from node definitions ──────────────────────────────
+  const entities = [];
+  const nodeRegex = /^\s*(\w+)\s*\[label=/gm;
+  let nm;
+  while ((nm = nodeRegex.exec(dotCode)) !== null) {
+    if (nm[1] !== 'graph' && nm[1] !== 'node' && nm[1] !== 'edge') {
+      entities.push({ name: nm[1], attrs: [] });
     }
   }
 
-  // ── Layout constants ────────────────────────────────────────────────────────
+  // ── Parse attributes from HTML-label tables ───────────────────────────────
+  // Match each node block and extract TR/TD content
+  const nodeBlockRegex = /(\w+)\s*\[label=<([\s\S]*?)>\s*\]/g;
+  let nb;
+  while ((nb = nodeBlockRegex.exec(dotCode)) !== null) {
+    const entityName = nb[1];
+    if (entityName === 'graph' || entityName === 'node' || entityName === 'edge') continue;
+    const entity = entities.find(e => e.name === entityName);
+    if (!entity) continue;
+
+    const tableContent = nb[2];
+    // Extract each TR's TD text content (strip XML tags)
+    const trRegex = /<TR>([\s\S]*?)<\/TR>/gi;
+    let tr;
+    let rowIndex = 0;
+    while ((tr = trRegex.exec(tableContent)) !== null) {
+      if (rowIndex === 0) { rowIndex++; continue; } // skip header row
+      const tdText = tr[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (tdText) entity.attrs.push(tdText);
+      rowIndex++;
+    }
+  }
+
+  // ── Parse relationships from edge definitions ─────────────────────────────
+  const relationships = [];
+  const edgeRegex = /(\w+)\s*->\s*(\w+)\s*\[label="([^"]+)"/g;
+  let er;
+  while ((er = edgeRegex.exec(dotCode)) !== null) {
+    relationships.push({ from: er[1], to: er[2], label: er[3] });
+  }
+
+  // ── Layout ────────────────────────────────────────────────────────────────
   const ENTITY_W = 240;
   const HEADER_H = 36;
   const ROW_H = 26;
@@ -227,52 +409,41 @@ function generateFallbackSVG(mermaidCode) {
     const a = positions[rel.from];
     const b = positions[rel.to];
     if (!a || !b) return '';
-
     const ax = a.x + a.w;
     const ay = a.y + a.h / 2;
     const bx = b.x;
     const by = b.y + b.h / 2;
     const mx = (ax + bx) / 2;
-    const labelX = mx;
-    const labelY = (ay + by) / 2 - 8;
-
     return `
     <path d="M ${ax} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${bx} ${by}"
           fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <rect x="${labelX - 28}" y="${labelY - 10}" width="56" height="14"
+    <rect x="${mx - 28}" y="${(ay + by) / 2 - 18}" width="56" height="14"
           fill="#ffffff" stroke="none"/>
-    <text x="${labelX}" y="${labelY}" text-anchor="middle"
-          font-family="Arial" font-size="10" fill="#333333">${rel.label}</text>`;
+    <text x="${mx}" y="${(ay + by) / 2 - 8}" text-anchor="middle"
+          font-family="Helvetica" font-size="10" fill="#333333">${rel.label}</text>`;
   }).join('');
 
   const boxesSVG = entities.map(e => {
     const { x, y, w, h } = positions[e.name];
-
     const attrRows = e.attrs.map((a, i) => {
       const rowY = y + HEADER_H + i * ROW_H;
       const bg = i % 2 === 0 ? '#ffffff' : '#f5f5f5';
-      const tagLabel = a.tag ? ` «${a.tag}»` : '';
-      const nameWeight = a.tag === 'PK' ? 'bold' : 'normal';
       return `
       <rect x="${x}" y="${rowY}" width="${w}" height="${ROW_H}"
             fill="${bg}" stroke="#000000" stroke-width="0.5"/>
       <text x="${x + 10}" y="${rowY + ROW_H / 2 + 4}"
-            font-family="Arial" font-size="11" fill="#000000">
-        <tspan font-style="italic" fill="#555555">${a.type}</tspan>
-        <tspan font-weight="${nameWeight}" fill="#000000"> ${a.name}</tspan>
-        <tspan fill="#888888" font-size="9">${tagLabel}</tspan>
-      </text>`;
+            font-family="Helvetica" font-size="11" fill="#000000">${a}</text>`;
     }).join('');
 
     return `
     <rect x="${x}" y="${y}" width="${w}" height="${h}"
           fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="2"/>
     <rect x="${x}" y="${y}" width="${w}" height="${HEADER_H}"
-          fill="#000000" stroke="#000000" stroke-width="1.5" rx="2"/>
+          fill="#222222" stroke="#222222" stroke-width="1.5" rx="2"/>
     <rect x="${x}" y="${y + HEADER_H - 2}" width="${w}" height="4"
-          fill="#000000" stroke="none"/>
+          fill="#222222" stroke="none"/>
     <text x="${x + w / 2}" y="${y + HEADER_H / 2 + 5}"
-          text-anchor="middle" font-family="Arial" font-size="13"
+          text-anchor="middle" font-family="Helvetica" font-size="13"
           font-weight="bold" fill="#ffffff">${e.name}</text>
     ${attrRows}`;
   }).join('');
@@ -281,24 +452,18 @@ function generateFallbackSVG(mermaidCode) {
 <svg xmlns="http://www.w3.org/2000/svg"
      width="${svgW}" height="${svgH}"
      viewBox="0 0 ${svgW} ${svgH}">
-
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8"
             refX="8" refY="3" orient="auto">
       <path d="M0,0 L0,6 L8,3 z" fill="#000000"/>
     </marker>
   </defs>
-
   <rect width="100%" height="100%" fill="#ffffff"/>
-
   <text x="${svgW / 2}" y="32" text-anchor="middle"
-        font-family="Arial" font-size="18" font-weight="bold"
+        font-family="Helvetica" font-size="18" font-weight="bold"
         fill="#000000">Entity Relationship Diagram</text>
-
   ${linesSVG}
-
   ${boxesSVG}
-
 </svg>`;
 }
 
@@ -309,8 +474,7 @@ export async function generateLatexDoc(job) {
   const { scenario, userId } = job.payload;
   job.addStep('📄 Generating structured report content with Gemini...');
 
-  // Get the cached Mermaid code to enforce table consistency
-  const cachedMermaid = userMermaidCache[userId] || '';
+  const cachedDot = userMermaidCache[userId] || '';
 
   const prompt = `You are an academic technical writer for a database design course.
 
@@ -365,39 +529,33 @@ IMPORTANT RULES FOR THE JSON:
 - Return ONLY the JSON object, nothing else
 
 CRITICAL ALIGNMENT INSTRUCTION:
-You MUST ensure the entities, attributes, primary keys, and relationships in your JSON EXACTLY MATCH the following Mermaid ERD design generated in the previous step:
+You MUST ensure the entities, attributes, primary keys, and relationships in your JSON EXACTLY MATCH the following Graphviz DOT ERD design generated in the previous step:
 
-\`\`\`mermaid
-${cachedMermaid}
+\`\`\`dot
+${cachedDot}
 \`\`\`
 `;
 
   const raw = await generateText(userId, prompt);
 
-  // ── Robust JSON extraction ──────────────────────────────────────────────────
-  // Strip markdown fences if present
   let jsonStr = raw
     .replace(/^```json\s*/i, '')
     .replace(/^```\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim();
 
-  // Find the outermost { ... } block
   const start = jsonStr.indexOf('{');
   const end = jsonStr.lastIndexOf('}');
   if (start === -1 || end === -1) {
     throw new Error('Gemini response did not contain a JSON object.');
   }
   jsonStr = jsonStr.slice(start, end + 1);
-
-  // Fix common LLM JSON mistakes before parsing
   jsonStr = fixCommonJsonIssues(jsonStr);
 
   let reportData;
   try {
     reportData = JSON.parse(jsonStr);
   } catch (e) {
-    // Last-resort: sanitize encoding issues and retry
     try {
       const sanitized = jsonStr
         .replace(/[\u2018\u2019]/g, "'")
@@ -418,23 +576,15 @@ ${cachedMermaid}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON sanitizer — fixes common mistakes LLMs make in JSON output
+// JSON sanitizer
 // ─────────────────────────────────────────────────────────────────────────────
 function fixCommonJsonIssues(str) {
-  // Remove trailing commas before } or ]
   str = str.replace(/,\s*([\}\]])/g, '$1');
-
-  // Replace smart/curly quotes with straight quotes
   str = str.replace(/[\u2018\u2019]/g, "'");
   str = str.replace(/[\u201C\u201D]/g, '"');
-
-  // Replace em/en dashes with hyphens
   str = str.replace(/[\u2013\u2014]/g, '-');
-
-  // Remove stray control characters (except normal whitespace \t \n \r)
   // eslint-disable-next-line no-control-regex
   str = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-
   return str;
 }
 
@@ -661,8 +811,7 @@ export async function generatePythonCode(job) {
   const { scenario, userId } = job.payload;
   job.addStep('🐍 Generating Python script to create the MS Access database...');
 
-  // Get the cached Mermaid code to enforce table consistency
-  const cachedMermaid = userMermaidCache[userId] || '';
+  const cachedDot = userMermaidCache[userId] || '';
 
   const prompt = `You are an expert Python developer specializing in Microsoft Access database automation with pyodbc and win32com.
 
@@ -794,33 +943,16 @@ STRICT IMPLEMENTATION RULES:
    - explanations
    - comments outside the code
 
-REFERENCE STYLE REQUIREMENT:
-The generated script must closely resemble a production-ready version of the reference implementation provided by the user, including:
-- stable connection handling
-- ADOX database creation
-- separated FK creation
-- autocommit=True
-- structured DDL arrays
-- parameterized inserts
-- proper cleanup
-- clear print messages
-
-The final script must run successfully on Windows with:
-- Python
-- pyodbc
-- pywin32
-- Microsoft Access Database Engine installed.
-
 CRITICAL ALIGNMENT INSTRUCTION:
-You MUST ensure the tables, columns, primary keys, and foreign keys in your Python script EXACTLY MATCH the following Mermaid ERD design generated in previous steps:
+You MUST ensure the tables, columns, primary keys, and foreign keys in your Python script EXACTLY MATCH the following Graphviz DOT ERD design generated in previous steps:
 
-\`\`\`mermaid
-${cachedMermaid}
+\`\`\`dot
+${cachedDot}
 \`\`\`
 `;
+
   const raw = await generateText(userId, prompt);
 
-  // Strip any markdown code fences the model might add despite instructions
   const clean = raw
     .replace(/^```python\s*/i, '')
     .replace(/^```\s*/i, '')

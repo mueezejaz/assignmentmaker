@@ -2,16 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import fs from 'fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Register queue handlers before routes
-import { registerHandlers } from './queue/handlers.js';
-registerHandlers();
 
 import apiRouter from './routes/api.js';
 
@@ -41,8 +36,10 @@ app.get('/health', (req, res) => {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🚀 University Assignment Generator Backend`);
-  console.log(`   Running on http://localhost:${PORT}`);
+  console.log(`\n🚀 University Assignment Generator — API Server`);
+  console.log(`   http://localhost:${PORT}`);
   console.log(`   Platform: ${process.platform}`);
-  console.log(`   Data directory: ${path.join(__dirname, 'data')}\n`);
+  console.log(`   Redis:    ${process.env.REDIS_URL || 'redis://localhost:6379'}`);
+  console.log(`\n⚠️  Remember to start the worker in a separate terminal:`);
+  console.log(`   node worker.js\n`);
 });

@@ -1,187 +1,142 @@
-# UniGen — AI University Database Assignment Generator
+# UniGen - AI University Database Assignment Generator
 
-A full-stack application that generates complete university database assignments using Google Gemini AI. Features a dark crimson gothic UI with real-time job progress via long polling.
+## Prerequisites
 
----
+Before running this project, make sure the following are installed on your machine:
 
-## Architecture
+- Node.js version 20 or higher
+- npm
+- Graphviz (the dot command must be available in your PATH)
+- A Google Gemini API key (free at https://aistudio.google.com/app/apikey)
 
-```
-uni-assignment-generator/
-├── backend/                   # Node.js / Express
-│   ├── server.js              # Entry point
-│   ├── queue/
-│   │   ├── Queue.js           # In-memory queue (built from scratch)
-│   │   └── handlers.js        # Job type handlers
-│   ├── routes/
-│   │   └── api.js             # REST API routes
-│   ├── services/
-│   │   ├── gemini.js          # Gemini AI client
-│   │   └── assignment.js      # 6-step generation pipeline
-│   ├── storage/
-│   │   └── storage.js         # Per-user file system storage
-│   └── data/                  # Created at runtime: data/<userId>/<jobId>/
-│
-└── frontend/                  # React + Vite
-    └── src/
-        ├── App.jsx            # Root component (Clerk + Mock auth)
-        ├── components/
-        │   ├── Header.jsx
-        │   ├── AuthScreen.jsx
-        │   ├── ApiKeyModal.jsx
-        │   ├── NewJobForm.jsx
-        │   ├── JobsSidebar.jsx
-        │   ├── JobDetail.jsx
-        │   ├── StepLog.jsx
-        │   ├── JobResults.jsx
-        │   └── Toast.jsx
-        ├── hooks/
-        │   ├── useJobPoller.js # Long-polling hook
-        │   └── useMockAuth.js  # Dev mock auth
-        └── lib/
-            └── api.js          # Axios API client
-```
+To install Graphviz:
 
----
+Windows (using winget):
 
-## Setup
+    winget install Graphviz.Graphviz
 
-### 1. Install Dependencies
+After installation, add the Graphviz bin folder to your PATH. The default location is:
 
-```bash
-# Backend
-cd backend
-npm install
+    C:\Program Files\Graphviz\bin
 
-# Frontend
-cd ../frontend
-npm install
-```
+To add it to PATH, open System Properties, go to Environment Variables, find the Path variable under System Variables, click Edit, and add the path above. Then close and reopen any terminals for the change to take effect. Verify it works by running:
 
-### 2. Configure Environment
+    dot -version
 
-**Backend** — copy `.env.example` to `.env`:
-```env
-PORT=3001
-FRONTEND_URL=http://localhost:5173
-```
+Windows (manual): download from https://graphviz.org/download/ and add the bin folder to your PATH manually as described above.
 
-**Frontend** — copy `.env.example` to `.env`:
-```env
-# Clerk Google Auth (optional - leave blank for mock auth)
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-```
+Ubuntu/Debian:
 
-### 3. Set Up Clerk (for Google Auth)
+    sudo apt-get install graphviz
 
-1. Go to [clerk.com](https://clerk.com) and create a free app
-2. Enable **Google** as a social provider in Clerk dashboard
-3. Copy your **Publishable Key** into `frontend/.env`
+macOS:
 
-> **Without Clerk key**: The app uses a mock auth mode — click "Enter as Developer". Perfect for development.
+    brew install graphviz
 
-### 4. Run the Application
+## Installation
 
-Open two terminals:
+Clone or download the project, then open a terminal in the project root.
 
-```bash
-# Terminal 1 — Backend
-cd backend
-npm run dev
-# → http://localhost:3001
+Install backend dependencies:
 
-# Terminal 2 — Frontend
-cd frontend
-npm run dev
-# → http://localhost:5173
-```
+    cd backend
+    npm install
 
----
+Install frontend dependencies:
 
-## How It Works
+    cd ../frontend
+    npm install
 
-### User Flow
+## Configuration
 
-1. **Sign in** with Google (via Clerk) or use mock auth
-2. **Enter Gemini API key** — validated against the Gemini API, stored in `data/<userId>/meta.json`
-3. **Describe your scenario** (or use the default)
-4. **Watch live progress** — long polling shows each generation step in real time
-5. **Download files** — all generated artifacts saved to `data/<userId>/<jobId>/`
+Copy the backend environment example file:
 
-### Generation Pipeline (6 Steps)
+    cd backend
+    cp .env.example .env
 
-| Step | Action | Output |
-|------|--------|--------|
-| 1 | Gemini generates Mermaid ERD | `erd.mmd` |
-| 2 | Mermaid CLI converts to image | `erd.png` / `erd.svg` |
-| 3 | Gemini writes LaTeX report | `report.tex` |
-| 4 | Pandoc / officegen converts | `report.docx` |
-| 5 | Gemini generates Python code | `create_database.py` |
-| 6 | Python script run (Windows) | `StudentAttendanceSystem.accdb` |
+The default .env values work for local development. You do not need to change anything unless you want a different port.
 
-### Queue System
+The frontend does not require any environment configuration for local development.
 
-Built from scratch in `backend/queue/Queue.js`:
-- **In-memory** — all job state lives in RAM
-- **Concurrent** — configurable worker concurrency (default: 2)
-- **Long polling** — `GET /api/jobs/:id/poll?since=<ts>` blocks up to 25s, returns on update
-- **Step logging** — each pipeline step logged with timestamp and state
+## Running the Project
 
-### Storage
+You need three terminal windows open at the same time.
 
-All data stored **locally** on the server:
-```
-data/
-└── user_clerk_abc123/           # sanitized user ID
-    ├── meta.json                # API key (base64), settings
-    └── job_1234567890-abc/      # one folder per job
-        ├── erd.mmd
-        ├── erd.png
-        ├── report.tex
-        ├── report.docx
-        ├── create_database.py
-        └── job.json             # job metadata
-```
+Terminal 1 - start the backend server:
 
----
+    cd backend
+    npm run dev
 
-## Generating the .accdb File
+Terminal 2 - start the background worker:
 
-The Python script requires **Windows** with MS Access:
+    cd backend
+    node worker.js
 
-```bash
-# On Windows machine:
-pip install pyodbc pywin32
-python create_database.py
-# → Creates StudentAttendanceSystem.accdb
-```
+Terminal 3 - start the frontend:
 
----
+    cd frontend
+    npm run dev
 
-## API Reference
+Once all three are running, open your browser and go to:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/api-key` | Save & validate Gemini API key |
-| GET | `/api/api-key/status` | Check if key is set |
-| DELETE | `/api/api-key` | Remove saved key |
-| POST | `/api/jobs` | Create generation job |
-| GET | `/api/jobs` | List user's jobs |
-| GET | `/api/jobs/:id` | Get job details |
-| GET | `/api/jobs/:id/poll?since=` | Long-poll for updates |
-| GET | `/api/jobs/:id/files/:name` | Download generated file |
-| GET | `/api/jobs/:id/view/:name` | View file inline |
+    http://localhost:5173
 
-All requests need header: `x-user-id: <userId>`
+## First-Time Setup in the Browser
 
----
+1. Enter your Google Gemini API key on the login screen. The key is validated against the Gemini API and stored on the server at data/[userId]/meta.json. It is never sent anywhere else.
 
-## Tech Stack
+2. On the main screen, type a description of your database scenario or leave the field blank to use the default University Management System example.
 
-- **Frontend**: React 18, Vite, Clerk, Lucide Icons
-- **Backend**: Node.js, Express, custom in-memory queue
-- **AI**: Google Gemini 1.5 Flash
-- **Diagram**: @mermaid-js/mermaid-cli (mmdc)
-- **DOCX**: Pandoc (primary) / officegen (fallback)
-- **Auth**: Clerk (Google OAuth) / mock auth for dev
-- **Storage**: Local filesystem (no database)
+3. Click Generate Full Assignment. The worker will run six steps and you can watch live progress on screen.
+
+4. When complete, download the generated files: ERD diagrams in PNG format, a Word report, and a Python script.
+
+## Generated Files
+
+Each job creates a folder at backend/data/[userId]/[jobId]/ containing:
+
+- erd.dot - Graphviz source for the crow's foot ERD
+- erd.png - Rendered crow's foot ERD at 300 DPI
+- erd_chen.dot - Graphviz source for the Chen notation ERD
+- erd_chen.png - Rendered Chen notation ERD at 300 DPI
+- report.json - Structured report data from Gemini
+- report.docx - Formatted Word document
+- create_database.py - Python script to create the MS Access database
+- README.md - Instructions for running the Python script
+
+## Generating the MS Access Database File
+
+The Python script requires Windows with the Microsoft Access Database Engine installed. It will not run on Linux or macOS.
+
+Step 1 - Install the Microsoft Access Database Engine 2016 Redistributable:
+
+    https://www.microsoft.com/en-us/download/details.aspx?id=54920
+
+Download and run the installer. If you are using 64-bit Python, install the 64-bit version of the engine. If you already have 32-bit Microsoft Office installed, you may need to use the 32-bit version instead or run the installer with the /quiet flag from an administrator command prompt:
+
+    accessdatabaseengine.exe /quiet
+
+Step 2 - Install the required Python packages:
+
+    pip install pyodbc pywin32
+
+Step 3 - Run the script:
+
+    python create_database.py
+
+This creates a .accdb file in the same folder as the script.
+
+If you get an error saying "Data source name not found" or "Could not find installable ISAM", it means the Access Database Engine is not installed or the architecture (32-bit vs 64-bit) does not match your Python installation. Reinstall the engine with the matching architecture.
+
+## Redis
+
+The project uses Redis via BullMQ for the job queue. A connection string for a hosted Redis instance (Upstash) is already hardcoded in backend/seg/seg.js, so you do not need to install or configure Redis locally.
+
+If you want to use your own Redis instance, update the REDIS_URL value in that file.
+
+## Notes
+
+- The backend runs on port 3001 by default. Change PORT in backend/.env to use a different port.
+- The frontend dev server runs on port 5173 and proxies all /api requests to the backend automatically.
+- All job data is stored on the local filesystem under backend/data/. This folder is created automatically and is excluded from version control.
+- The worker and the API server are separate processes. Both must be running for jobs to be processed.

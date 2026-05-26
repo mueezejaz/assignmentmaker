@@ -20,12 +20,14 @@ export async function validateApiKey(apiKey) {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-preview',
+      model: 'gemini-3.1-flash-lite',
       contents: 'Say "valid" in one word.',
     });
     const text = response.text;
+    console.log(text)
     return { valid: true, text };
   } catch (err) {
+    console.log("this is error", err)
     return { valid: false, error: err.message };
   }
 }

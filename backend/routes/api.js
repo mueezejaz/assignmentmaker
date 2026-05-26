@@ -102,10 +102,26 @@ router.get('/jobs', async (req, res) => {
 });
 
 router.get('/jobs/:id', async (req, res) => {
+  const userId = getUserId(req);
   try {
     const job = await getJob(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    res.json(await serializeJob(job));
+    const serialized = await serializeJob(job);
+
+    // Merge files from disk job.json (worker saves these, BullMQ returnvalue may be stale)
+    const userDir = path.join('data', userId.replace(/[^a-zA-Z0-9_\-]/g, '_'));
+    const diskMetaPath = path.join(userDir, req.params.id, 'job.json');
+    if (fs.existsSync(diskMetaPath)) {
+      const diskMeta = JSON.parse(fs.readFileSync(diskMetaPath, 'utf8'));
+      if (diskMeta.files && (!serialized.result || !serialized.result.files)) {
+        serialized.files = diskMeta.files;
+      } else if (diskMeta.files) {
+        serialized.result = serialized.result || {};
+        serialized.result.files = serialized.result.files || diskMeta.files;
+      }
+    }
+
+    res.json(serialized);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
